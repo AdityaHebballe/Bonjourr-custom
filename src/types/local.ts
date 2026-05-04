@@ -9,7 +9,7 @@ export interface Local {
     fontface?: string
     userQuoteSelection: number
     quotesCache: Quote[]
-    gamesCache?: GamesCache
+    gamesCache?: GamesCacheStore
     igdbClientId?: string
     igdbClientSecret?: string
     igdbAccessToken?: string
@@ -99,6 +99,8 @@ export interface GamesCache {
     items: GameReleaseItem[]
     hasMore?: boolean
 }
+
+export type GamesCacheStore = Record<string, GamesCache>
 
 export type Translations = {
     lang: string

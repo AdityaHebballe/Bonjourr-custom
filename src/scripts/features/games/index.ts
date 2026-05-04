@@ -1,5 +1,5 @@
 import { displayGames, displayGamesError, displayGamesLoading, displayGamesSetup } from './display.ts'
-import { requestGameReleaseItems } from './request.ts'
+import { getGamesCacheEntry, requestGameReleaseItems } from './request.ts'
 import { EXTENSION, IS_MOBILE, PLATFORM } from '../../defaults.ts'
 import { eventDebounce } from '../../utils/debounce.ts'
 import { storage } from '../../storage.ts'
@@ -18,7 +18,6 @@ type GamesEvent = {
 const container = document.getElementById('games_container')
 const list = document.getElementById('games_list')
 const GAMES_WINDOW_LIMIT = 24
-const GAMES_CACHE_REFRESH_AGE = 1000 * 60 * 60 * 24
 const GAMES_SCROLL_WINDOW = 1000 * 60 * 60 * 24 * 30
 const GAMES_EMPTY_WINDOW_LOOKAHEAD = 6
 let currentRender = 0
@@ -29,6 +28,8 @@ let loadingMore = false
 let canSearchGames = false
 let nextWindowStart = 0
 let nextWindowEnd = 0
+let renderController: AbortController | undefined
+let loadMoreController: AbortController | undefined
 
 export function games(init?: Games, event?: GamesEvent): void {
     if (event) {
@@ -140,6 +141,11 @@ async function updateGames(event: GamesEvent): Promise<void> {
 
 async function renderGames(config: Games): Promise<void> {
     const renderId = ++currentRender
+    renderController?.abort()
+    loadMoreController?.abort()
+    const controller = new AbortController()
+    renderController = controller
+    loadMoreController = undefined
 
     handleToggle(config.on)
     setGamesCardSize(config.size)
@@ -176,9 +182,7 @@ async function renderGames(config: Games): Promise<void> {
         ])
         const { searchbar } = await storage.sync.get('searchbar')
         const hasCredentials = !!local.igdbClientId && !!local.igdbClientSecret
-        const cacheMatches = doesCacheMatchQuery(local.gamesCache, query)
-        const cacheIsDailyStale = cacheMatches &&
-            Date.now() - (local.gamesCache?.fetchedAt ?? 0) > GAMES_CACHE_REFRESH_AGE
+        const cache = getGamesCacheEntry(local.gamesCache, query)
         canSearchGames = !!searchbar?.on
 
         if (!hasCredentials) {
@@ -190,19 +194,24 @@ async function renderGames(config: Games): Promise<void> {
             return
         }
 
-        if (cacheMatches && local.gamesCache) {
-            renderedItems = mergeGames([], local.gamesCache.items)
+        if (cache) {
+            renderedItems = mergeGames([], cache.items)
 
             if (renderId === currentRender) {
                 displayGames(renderedItems, false, canSearchGames, false)
             }
 
-            if (!cacheIsDailyStale) {
+            if (Date.now() - cache.fetchedAt < 1000 * 60 * 60 * 24) {
                 return
             }
         }
 
-        const { items, local: localPatch } = await requestGameReleaseItems(activeQuery, local, cacheIsDailyStale)
+        const { items, local: localPatch } = await requestGameReleaseItems(
+            activeQuery,
+            local,
+            !!cache,
+            controller.signal,
+        )
 
         if (Object.keys(localPatch).length > 0) {
             storage.local.set(localPatch)
@@ -216,7 +225,7 @@ async function renderGames(config: Games): Promise<void> {
         hasMorePages = true
         displayGames(renderedItems, false, canSearchGames, false)
     } catch (_error) {
-        if (renderId !== currentRender) {
+        if (renderId !== currentRender || controller.signal.aborted) {
             return
         }
 
@@ -245,30 +254,40 @@ async function loadMoreGames(): Promise<void> {
         return
     }
 
+    loadMoreController?.abort()
+    const controller = new AbortController()
+    loadMoreController = controller
     loadingMore = true
     displayGames(renderedItems, true, canSearchGames, true)
 
     try {
         let collected: GameReleaseItem[] = []
         let windowsTried = 0
+        const localState = await storage.local.get([
+            'gamesCache',
+            'igdbClientId',
+            'igdbClientSecret',
+            'igdbAccessToken',
+            'igdbAccessTokenExpiresAt',
+        ])
+        const localPatch: Partial<Awaited<ReturnType<typeof storage.local.get>>> = {}
 
         while (windowsTried < GAMES_EMPTY_WINDOW_LOOKAHEAD && collected.length === 0) {
-            const local = await storage.local.get([
-                'gamesCache',
-                'igdbClientId',
-                'igdbClientSecret',
-                'igdbAccessToken',
-                'igdbAccessTokenExpiresAt',
-            ])
             const windowQuery: GamesQuery = {
                 ...activeQuery,
                 startAt: nextWindowStart,
                 endAt: nextWindowEnd,
             }
-            const { items, local: localPatch } = await requestGameReleaseItems(windowQuery, local)
+            const { items, local: requestLocalPatch } = await requestGameReleaseItems(
+                windowQuery,
+                localState,
+                false,
+                controller.signal,
+            )
 
-            if (Object.keys(localPatch).length > 0) {
-                storage.local.set(localPatch)
+            if (Object.keys(requestLocalPatch).length > 0) {
+                Object.assign(localState, requestLocalPatch)
+                Object.assign(localPatch, requestLocalPatch)
             }
 
             collected = mergeGames(collected, items)
@@ -277,10 +296,18 @@ async function loadMoreGames(): Promise<void> {
             windowsTried += 1
         }
 
+        if (Object.keys(localPatch).length > 0) {
+            storage.local.set(localPatch)
+        }
+
         renderedItems = mergeGames(renderedItems, collected)
         hasMorePages = collected.length > 0
         displayGames(renderedItems, true, canSearchGames, false)
     } catch (_error) {
+        if (controller.signal.aborted) {
+            return
+        }
+
         displayGames(renderedItems, true, canSearchGames, false)
     } finally {
         loadingMore = false
@@ -372,17 +399,6 @@ function isValidEngine(str = ''): str is SearchEngines {
         'baidu',
         'custom',
     ].includes(str as SearchEngines)
-}
-
-function doesCacheMatchQuery(
-    cache: Awaited<ReturnType<typeof storage.local.get>>['gamesCache'],
-    query: GamesQuery,
-): boolean {
-    return !!cache &&
-        cache.query.range === query.range &&
-        cache.query.platform === query.platform &&
-        cache.query.minHypes === query.minHypes &&
-        cache.query.limit === query.limit
 }
 
 function getRangeDuration(range: GamesRange): number {

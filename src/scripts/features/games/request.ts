@@ -1,6 +1,7 @@
-import type { GamesCache } from '../../../types/local.ts'
+import type { GamesCache, GamesCacheStore } from '../../../types/local.ts'
 import type { GameReleaseItem, GamesQuery } from '../../../types/shared.ts'
 
+const GAMES_CACHE_REFRESH_AGE = 1000 * 60 * 60 * 24
 const GAMES_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30
 const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 const IGDB_GAMES_URL = 'https://api.igdb.com/v4/games'
@@ -8,7 +9,7 @@ const IGDB_RELEASE_DATES_URL = 'https://api.igdb.com/v4/release_dates'
 const IGDB_COVER_BASE_URL = 'https://images.igdb.com/igdb/image/upload/t_cover_big'
 
 type GamesLocalState = {
-    gamesCache?: GamesCache
+    gamesCache?: GamesCacheStore
     igdbClientId?: string
     igdbClientSecret?: string
     igdbAccessToken?: string
@@ -19,18 +20,22 @@ export async function requestGameReleaseItems(
     query: GamesQuery,
     local: GamesLocalState,
     forceRefresh = false,
+    signal?: AbortSignal,
 ): Promise<{ items: GameReleaseItem[]; hasMore: boolean; local: Partial<GamesLocalState> }> {
     if (!hasIgdbCredentials(local)) {
         return { items: [], hasMore: false, local: {} }
     }
 
-    if (!forceRefresh && query.startAt === undefined && local.gamesCache && isFreshCache(query, local.gamesCache)) {
-        return { items: local.gamesCache.items, hasMore: !!local.gamesCache.hasMore, local: {} }
+    const cacheKey = getGamesCacheKey(query)
+    const cache = getGamesCacheEntry(local.gamesCache, query)
+
+    if (!forceRefresh && cache && isFreshCache(cache)) {
+        return { items: cache.items, hasMore: !!cache.hasMore, local: {} }
     }
 
     try {
-        const auth = await getValidIgdbAccessToken(local)
-        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken)
+        const auth = await getValidIgdbAccessToken(local, signal)
+        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken, signal)
 
         if (!response || response.status !== 200) {
             throw new Error('Cannot get games')
@@ -42,23 +47,28 @@ export async function requestGameReleaseItems(
             fetchedAt: Date.now(),
             query,
             items,
-            hasMore: query.startAt === undefined ? hasMore : false,
+            hasMore,
         }
 
         return {
             items,
-            hasMore: query.startAt === undefined ? hasMore : false,
+            hasMore,
             local: {
-                gamesCache: query.startAt === undefined ? nextCache : local.gamesCache,
+                gamesCache: {
+                    ...getGamesCacheStore(local.gamesCache),
+                    [cacheKey]: nextCache,
+                },
                 igdbAccessToken: auth.accessToken,
                 igdbAccessTokenExpiresAt: auth.expiresAt,
             },
         }
     } catch (_error) {
-        const staleCache = local.gamesCache
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError')
+        }
 
-        if (query.startAt === undefined && staleCache && cacheMatchesQuery(query, staleCache)) {
-            return { items: staleCache.items, hasMore: !!staleCache.hasMore, local: {} }
+        if (cache && isUsableStaleCache(cache)) {
+            return { items: cache.items, hasMore: !!cache.hasMore, local: {} }
         }
 
         throw new Error('Cannot get games')
@@ -90,15 +100,12 @@ export async function verifyIgdbCredentials(
     }
 }
 
-function isFreshCache(query: GamesQuery, cache: GamesCache): boolean {
-    return cacheMatchesQuery(query, cache) && Date.now() - cache.fetchedAt < GAMES_CACHE_MAX_AGE
+function isFreshCache(cache: GamesCache): boolean {
+    return Date.now() - cache.fetchedAt < GAMES_CACHE_REFRESH_AGE
 }
 
-function cacheMatchesQuery(query: GamesQuery, cache: GamesCache): boolean {
-    return cache.query.range === query.range &&
-        cache.query.platform === query.platform &&
-        cache.query.limit === query.limit &&
-        cache.query.minHypes === query.minHypes
+function isUsableStaleCache(cache: GamesCache): boolean {
+    return Date.now() - cache.fetchedAt < GAMES_CACHE_MAX_AGE
 }
 
 function hasIgdbCredentials(local: GamesLocalState): local is GamesLocalState & {
@@ -110,6 +117,7 @@ function hasIgdbCredentials(local: GamesLocalState): local is GamesLocalState & 
 
 async function getValidIgdbAccessToken(
     local: GamesLocalState & { igdbClientId: string; igdbClientSecret: string },
+    signal?: AbortSignal,
 ): Promise<{ accessToken: string; expiresAt: number }> {
     if (local.igdbAccessToken && (local.igdbAccessTokenExpiresAt ?? 0) > Date.now() + 60000) {
         return {
@@ -125,7 +133,7 @@ async function getValidIgdbAccessToken(
     url.searchParams.set('grant_type', 'client_credentials')
 
     try {
-        const response = await fetch(url, { method: 'POST' })
+        const response = await fetch(url, { method: 'POST', signal })
 
         if (!response || response.status !== 200) {
             throw new Error('Cannot get IGDB token')
@@ -156,12 +164,14 @@ async function fetchIgdbReleaseDates(
     query: GamesQuery,
     clientId: string,
     accessToken: string,
+    signal?: AbortSignal,
 ): Promise<Response | undefined> {
     const body = createReleaseDatesQuery(query)
 
     try {
         return await fetch(IGDB_RELEASE_DATES_URL, {
             method: 'POST',
+            signal,
             headers: {
                 Accept: 'application/json',
                 'Client-ID': clientId,
@@ -172,6 +182,28 @@ async function fetchIgdbReleaseDates(
     } catch (_error) {
         // ...
     }
+}
+
+export function getGamesCacheKey(query: GamesQuery): string {
+    return [
+        query.range,
+        query.platform,
+        query.limit.toString(),
+        query.minHypes.toString(),
+        (query.startAt ?? 0).toString(),
+        (query.endAt ?? 0).toString(),
+    ].join('|')
+}
+
+export function getGamesCacheEntry(
+    store: GamesCacheStore | undefined,
+    query: GamesQuery,
+): GamesCache | undefined {
+    return store?.[getGamesCacheKey(query)]
+}
+
+function getGamesCacheStore(store: GamesCacheStore | undefined): GamesCacheStore {
+    return store ?? {}
 }
 
 async function fetchIgdbConnectionCheck(clientId: string, accessToken: string): Promise<Response | undefined> {
