@@ -4,7 +4,7 @@ import type { GameReleaseItem } from '../../../types/shared.ts'
 
 const list = document.getElementById('games_list')
 
-export function displayGames(items: GameReleaseItem[], preserveScroll = false): void {
+export function displayGames(items: GameReleaseItem[], preserveScroll = false, interactive = false): void {
     if (!list) {
         return
     }
@@ -26,6 +26,14 @@ export function displayGames(items: GameReleaseItem[], preserveScroll = false): 
         const date = document.createElement('span')
 
         item.className = 'games-item'
+        item.dataset.title = release.title
+        item.classList.toggle('interactive', interactive)
+
+        if (interactive) {
+            item.tabIndex = 0
+            item.setAttribute('role', 'link')
+            item.setAttribute('aria-label', release.title)
+        }
         cover.className = 'games-item-cover'
         body.className = 'games-item-body'
         title.className = 'games-item-title'

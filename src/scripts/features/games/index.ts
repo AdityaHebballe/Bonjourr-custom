@@ -1,10 +1,11 @@
 import { displayGames, displayGamesError, displayGamesLoading, displayGamesSetup } from './display.ts'
 import { requestGameReleaseItems } from './request.ts'
+import { EXTENSION, IS_MOBILE, PLATFORM } from '../../defaults.ts'
 import { eventDebounce } from '../../utils/debounce.ts'
 import { storage } from '../../storage.ts'
 
-import type { GameReleaseItem, GamesPlatform, GamesQuery, GamesRange } from '../../../types/shared.ts'
-import type { Games } from '../../../types/sync.ts'
+import type { GameReleaseItem, GamesPlatform, GamesQuery, GamesRange, SearchEngines } from '../../../types/shared.ts'
+import type { Games, Searchbar } from '../../../types/sync.ts'
 
 type GamesEvent = {
     on?: boolean
@@ -23,6 +24,7 @@ let renderedItems: GameReleaseItem[] = []
 let currentOffset = 0
 let hasMorePages = false
 let loadingMore = false
+let canSearchGames = false
 
 export function games(init?: Games, event?: GamesEvent): void {
     if (event) {
@@ -38,6 +40,33 @@ export function games(init?: Games, event?: GamesEvent): void {
 }
 
 queueMicrotask(() => {
+    list?.addEventListener('click', (event) => {
+        const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('.games-item')
+        const title = item?.dataset.title
+
+        if (!canSearchGames || !title) {
+            return
+        }
+
+        void openGameSearch(title)
+    })
+
+    list?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return
+        }
+
+        const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('.games-item')
+        const title = item?.dataset.title
+
+        if (!canSearchGames || !title) {
+            return
+        }
+
+        event.preventDefault()
+        void openGameSearch(title)
+    })
+
     container?.addEventListener(
         'wheel',
         (event) => {
@@ -133,10 +162,12 @@ async function renderGames(config: Games): Promise<void> {
             'igdbAccessToken',
             'igdbAccessTokenExpiresAt',
         ])
+        const { searchbar } = await storage.sync.get('searchbar')
         const hasCredentials = !!local.igdbClientId && !!local.igdbClientSecret
         const cacheMatches = doesCacheMatchQuery(local.gamesCache, query)
         const cacheIsDailyStale = cacheMatches &&
             Date.now() - (local.gamesCache?.fetchedAt ?? 0) > GAMES_CACHE_REFRESH_AGE
+        canSearchGames = !!searchbar?.on
 
         if (!hasCredentials) {
             if (renderId !== currentRender) {
@@ -153,7 +184,7 @@ async function renderGames(config: Games): Promise<void> {
             hasMorePages = !!local.gamesCache.hasMore
 
             if (renderId === currentRender) {
-                displayGames(renderedItems)
+                displayGames(renderedItems, false, canSearchGames)
             }
 
             if (!cacheIsDailyStale) {
@@ -174,7 +205,7 @@ async function renderGames(config: Games): Promise<void> {
         renderedItems = mergeGames([], items)
         currentOffset = Math.max(query.limit * 6, 24)
         hasMorePages = hasMore
-        displayGames(renderedItems)
+        displayGames(renderedItems, false, canSearchGames)
     } catch (_error) {
         if (renderId !== currentRender) {
             return
@@ -221,7 +252,7 @@ async function loadMoreGames(): Promise<void> {
         renderedItems = mergeGames(renderedItems, items)
         currentOffset += Math.max(activeQuery.limit * 6, 24)
         hasMorePages = hasMore
-        displayGames(renderedItems, true)
+        displayGames(renderedItems, true, canSearchGames)
     } finally {
         loadingMore = false
     }
@@ -256,6 +287,62 @@ function mergeGames(current: GameReleaseItem[], incoming: GameReleaseItem[]): Ga
 function comparePlatformLabels(a: string, b: string): number {
     const order = ['PC', 'PlayStation', 'Xbox', 'Nintendo']
     return order.indexOf(a) - order.indexOf(b)
+}
+
+async function openGameSearch(title: string): Promise<void> {
+    const { searchbar } = await storage.sync.get('searchbar')
+    const engine = searchbar?.engine ?? 'default'
+    const request = searchbar?.request ?? ''
+    const newtab = searchbar?.newtab ?? false
+    const canUseDefault = !IS_MOBILE && (PLATFORM === 'chrome' || PLATFORM === 'firefox')
+
+    if (canUseDefault && engine === 'default') {
+        ;(EXTENSION as typeof chrome)?.search.query({
+            disposition: newtab ? 'NEW_TAB' : 'CURRENT_TAB',
+            text: title,
+        })
+        return
+    }
+
+    globalThis.open(createSearchUrl(title, engine, request), newtab ? '_blank' : '_self')
+}
+
+function createSearchUrl(query: string, engine: Searchbar['engine'], request: Searchbar['request']): string {
+    const urls: Record<SearchEngines, string> = {
+        default: '',
+        google: 'https://www.google.com/search?q=%s',
+        ddg: 'https://duckduckgo.com/?q=%s',
+        startpage: 'https://www.startpage.com/do/search?query=%s',
+        qwant: 'https://www.qwant.com/?q=%s',
+        yahoo: 'https://search.yahoo.com/search?q=%s',
+        bing: 'https://www.bing.com/search?q=%s',
+        brave: 'https://search.brave.com/search?q=%s',
+        ecosia: 'https://www.ecosia.org/search?q=%s',
+        lilo: 'https://search.lilo.org/?q=%s',
+        baidu: 'https://www.baidu.com/s?wd=%s',
+        custom: request,
+    }
+
+    const safeEngine = isValidEngine(engine) ? engine : 'google'
+    const template = safeEngine === 'custom' && !request ? urls.google : urls[safeEngine]
+    return template.replace('%s', encodeURIComponent(query))
+}
+
+function isValidEngine(str = ''): str is SearchEngines {
+    return [
+        'default',
+        'google',
+        'ddg',
+        'startpage',
+        'qwant',
+        'yahoo',
+        'bing',
+        'brave',
+        'ecosia',
+        'lilo',
+        'baidu',
+        'custom',
+    ].includes(str as SearchEngines)
 }
 
 function doesCacheMatchQuery(

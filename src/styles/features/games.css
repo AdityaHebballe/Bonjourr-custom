@@ -48,25 +48,14 @@
     justify-content: center;
 }
 
-#games_list::-webkit-scrollbar {
-    height: 10px;
-}
-
 #games_container:hover #games_list,
 #games_container:focus-within #games_list {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) transparent;
 }
 
-#games_list::-webkit-scrollbar-track {
-    box-shadow: inset 0 0 10px 10px transparent;
-    border: solid 3px transparent;
-}
-
 #games_list::-webkit-scrollbar-thumb {
     box-shadow: inset 0 0 10px 10px transparent;
-    border: solid 3px transparent;
-    border-radius: 10px;
 }
 
 #games_container:hover #games_list::-webkit-scrollbar-thumb,
@@ -82,6 +71,25 @@
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.08);
     scroll-snap-align: start;
+}
+
+.games-item.interactive {
+    cursor: pointer;
+    transition:
+        transform 0.2s var(--in-out-bounce),
+        border-color 0.1s var(--out-cubic),
+        background-color 0.1s var(--out-cubic);
+}
+
+.games-item.interactive:hover {
+    transform: translateY(-0.15em);
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.games-item.interactive:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.75);
+    outline-offset: 2px;
 }
 
 .games-item-cover {
