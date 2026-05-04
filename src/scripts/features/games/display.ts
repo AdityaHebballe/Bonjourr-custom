@@ -3,6 +3,7 @@ import { tradThis } from '../../utils/translations.ts'
 import type { GameReleaseItem } from '../../../types/shared.ts'
 
 const list = document.getElementById('games_list')
+const LOADING_MORE_SELECTOR = '.games-loading-more'
 
 export function displayGames(
     items: GameReleaseItem[],
@@ -32,43 +33,7 @@ export function displayGames(
             currentMonth = releaseMonth
             list.appendChild(createMonthSeparator(releaseMonth))
         }
-
-        const item = document.createElement('li')
-        const cover = release.cover ? document.createElement('img') : document.createElement('div')
-        const coverUrl = release.cover
-        const body = document.createElement('div')
-        const title = document.createElement('span')
-        const meta = document.createElement('span')
-        const date = document.createElement('span')
-
-        item.className = 'games-item'
-        item.dataset.title = release.title
-        item.classList.toggle('interactive', interactive)
-
-        if (interactive) {
-            item.tabIndex = 0
-            item.setAttribute('role', 'link')
-            item.setAttribute('aria-label', release.title)
-        }
-        cover.className = 'games-item-cover'
-        body.className = 'games-item-body'
-        title.className = 'games-item-title'
-        meta.className = 'games-item-meta'
-        date.className = 'games-item-date'
-
-        if (cover instanceof HTMLImageElement && coverUrl) {
-            cover.src = coverUrl
-            cover.alt = ''
-            cover.decoding = 'async'
-        }
-
-        title.textContent = release.title
-        meta.textContent = release.platform
-        date.textContent = formatDate(release.releaseDate)
-
-        body.append(title, meta, date)
-        item.append(cover, body)
-        list.appendChild(item)
+        list.appendChild(createGameItem(release, interactive))
     }
 
     if (loadingMore) {
@@ -76,6 +41,47 @@ export function displayGames(
     }
 
     syncGamesScroller(preserveScroll, previousScrollLeft)
+}
+
+export function appendGames(items: GameReleaseItem[], interactive = false): void {
+    if (!list || items.length === 0) {
+        toggleGamesLoadingMore(false)
+        return
+    }
+
+    const previousScrollLeft = list.scrollLeft
+    let currentMonth = getLastRenderedMonth()
+
+    removeLoadingIndicator()
+
+    for (const release of items) {
+        const releaseMonth = formatMonth(release.releaseDate)
+
+        if (releaseMonth !== currentMonth) {
+            currentMonth = releaseMonth
+            list.appendChild(createMonthSeparator(releaseMonth))
+        }
+
+        list.appendChild(createGameItem(release, interactive))
+    }
+
+    syncGamesScroller(true, previousScrollLeft)
+}
+
+export function toggleGamesLoadingMore(show: boolean): void {
+    if (!list) {
+        return
+    }
+
+    const previousScrollLeft = list.scrollLeft
+
+    removeLoadingIndicator()
+
+    if (show) {
+        list.appendChild(createLoadingIndicator())
+    }
+
+    syncGamesScroller(true, previousScrollLeft)
 }
 
 export function displayGamesLoading(): void {
@@ -128,6 +134,7 @@ function createMonthSeparator(text: string): HTMLLIElement {
     const label = document.createElement('span')
 
     item.className = 'games-separator'
+    item.dataset.month = text
     label.className = 'games-separator-label'
     label.textContent = text
     item.appendChild(label)
@@ -147,6 +154,58 @@ function createLoadingIndicator(): HTMLLIElement {
     item.append(spinner, text)
 
     return item
+}
+
+function createGameItem(release: GameReleaseItem, interactive: boolean): HTMLLIElement {
+    const item = document.createElement('li')
+    const cover = release.cover ? document.createElement('img') : document.createElement('div')
+    const coverUrl = release.cover
+    const body = document.createElement('div')
+    const title = document.createElement('span')
+    const meta = document.createElement('span')
+    const date = document.createElement('span')
+
+    item.className = 'games-item'
+    item.dataset.title = release.title
+    item.classList.toggle('interactive', interactive)
+
+    if (interactive) {
+        item.tabIndex = 0
+        item.setAttribute('role', 'link')
+        item.setAttribute('aria-label', release.title)
+    }
+
+    cover.className = 'games-item-cover'
+    body.className = 'games-item-body'
+    title.className = 'games-item-title'
+    meta.className = 'games-item-meta'
+    date.className = 'games-item-date'
+
+    if (cover instanceof HTMLImageElement && coverUrl) {
+        cover.src = coverUrl
+        cover.alt = ''
+        cover.decoding = 'async'
+        cover.loading = 'lazy'
+    }
+
+    title.textContent = release.title
+    meta.textContent = release.platform
+    date.textContent = formatDate(release.releaseDate)
+
+    body.append(title, meta, date)
+    item.append(cover, body)
+
+    return item
+}
+
+function getLastRenderedMonth(): string {
+    const separators = list?.querySelectorAll<HTMLLIElement>('.games-separator')
+    const separator = separators ? separators[separators.length - 1] : undefined
+    return separator?.dataset.month ?? ''
+}
+
+function removeLoadingIndicator(): void {
+    list?.querySelector(LOADING_MORE_SELECTOR)?.remove()
 }
 
 function syncGamesScroller(preserveScroll: boolean, previousScrollLeft: number): void {

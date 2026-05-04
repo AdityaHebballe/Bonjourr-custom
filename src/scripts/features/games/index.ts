@@ -1,4 +1,11 @@
-import { displayGames, displayGamesError, displayGamesLoading, displayGamesSetup } from './display.ts'
+import {
+    appendGames,
+    displayGames,
+    displayGamesError,
+    displayGamesLoading,
+    displayGamesSetup,
+    toggleGamesLoadingMore,
+} from './display.ts'
 import { getGamesCacheEntry, requestGameReleaseItems } from './request.ts'
 import { EXTENSION, IS_MOBILE, PLATFORM } from '../../defaults.ts'
 import { eventDebounce } from '../../utils/debounce.ts'
@@ -258,7 +265,7 @@ async function loadMoreGames(): Promise<void> {
     const controller = new AbortController()
     loadMoreController = controller
     loadingMore = true
-    displayGames(renderedItems, true, canSearchGames, true)
+    toggleGamesLoadingMore(true)
 
     try {
         let collected: GameReleaseItem[] = []
@@ -300,15 +307,27 @@ async function loadMoreGames(): Promise<void> {
             storage.local.set(localPatch)
         }
 
-        renderedItems = mergeGames(renderedItems, collected)
+        const existingIds = new Set(renderedItems.map((item) => item.id))
+        const hasOverlap = collected.some((item) => existingIds.has(item.id))
+        const nextRenderedItems = mergeGames(renderedItems, collected)
+        const appendedItems = collected.filter((item) => !existingIds.has(item.id))
+
+        renderedItems = nextRenderedItems
         hasMorePages = collected.length > 0
-        displayGames(renderedItems, true, canSearchGames, false)
+
+        if (hasOverlap) {
+            displayGames(renderedItems, true, canSearchGames, false)
+            return
+        }
+
+        toggleGamesLoadingMore(false)
+        appendGames(appendedItems, canSearchGames)
     } catch (_error) {
         if (controller.signal.aborted) {
             return
         }
 
-        displayGames(renderedItems, true, canSearchGames, false)
+        toggleGamesLoadingMore(false)
     } finally {
         loadingMore = false
     }
