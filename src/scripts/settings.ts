@@ -208,6 +208,8 @@ function initOptionsValues(data: Sync, local: Local): void {
     setInput('i_games_range', data.games?.range ?? '14d')
     setInput('i_games_platform', data.games?.platform ?? 'all')
     setInput('i_games_limit', data.games?.limit ?? 5)
+    setInput('i_games_clientid', local.igdbClientId ?? '')
+    setInput('i_games_secret', local.igdbClientSecret ?? '')
     setInput('i_qtfreq', data.quotes?.frequency || 'day')
     setInput('i_qttype', data.quotes?.type || 'classic')
     setInput('i_qtlist', userQuotes ?? '')
@@ -859,6 +861,28 @@ function initOptionsEvents(): void {
 
     paramId('i_games_limit').addEventListener('change', function (): void {
         games(undefined, { limit: this.value })
+    })
+
+    paramId('f_gamesauth').addEventListener('submit', async function (this, event): Promise<void> {
+        event.preventDefault()
+
+        const igdbClientId = paramId('i_games_clientid').value.trim()
+        const igdbClientSecret = paramId('i_games_secret').value.trim()
+
+        storage.local.set({ igdbClientId, igdbClientSecret })
+        storage.local.remove('igdbAccessToken')
+        storage.local.remove('igdbAccessTokenExpiresAt')
+
+        settingsInitLocal.igdbClientId = igdbClientId
+        settingsInitLocal.igdbClientSecret = igdbClientSecret
+        settingsInitLocal.igdbAccessToken = undefined
+        settingsInitLocal.igdbAccessTokenExpiresAt = undefined
+
+        const sync = await storage.sync.get('games')
+
+        if (sync.games?.on) {
+            games(sync.games)
+        }
     })
 
     // Quotes

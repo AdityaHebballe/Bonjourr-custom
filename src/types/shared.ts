@@ -111,6 +111,13 @@ export interface GameReleaseItem {
     releaseDate: string
     platform: string
     cover?: string
+    url?: string
+}
+
+export interface GamesQuery {
+    range: GamesRange
+    platform: GamesPlatform
+    limit: GamesLimit
 }
 
 export interface SimpleWeather {

@@ -1,4 +1,4 @@
-import type { Background, Quote, SimpleWeather } from './shared.ts'
+import type { Background, GameReleaseItem, GamesQuery, Quote, SimpleWeather } from './shared.ts'
 import type { Sync } from './sync.ts'
 
 export type BackgroundUrlState = 'NONE' | 'LOADING' | 'OK' | 'NOT_URL' | 'CANT_REACH' | 'NOT_MEDIA'
@@ -9,6 +9,11 @@ export interface Local {
     fontface?: string
     userQuoteSelection: number
     quotesCache: Quote[]
+    gamesCache?: GamesCache
+    igdbClientId?: string
+    igdbClientSecret?: string
+    igdbAccessToken?: string
+    igdbAccessTokenExpiresAt?: number
     translations?: Translations
     lastWeather?: LastWeather
     operaExplained?: true
@@ -86,6 +91,12 @@ export interface FontListItem {
     family: string
     weights: string[]
     variable: boolean
+}
+
+export interface GamesCache {
+    fetchedAt: number
+    query: GamesQuery
+    items: GameReleaseItem[]
 }
 
 export type Translations = {

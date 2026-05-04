@@ -1520,6 +1520,18 @@
 
 <div class="settings-title" id="games_title">
     <h2 class="trn">Games releases</h2>
+
+    <button class="tooltip ttgames" title="Tips on game releases" aria-label="Tips on game releases">?</button>
+
+    <p class="tooltiptext dropdown ttgames">
+        <span class="trn">Advanced local mode: add your own IGDB client ID and client secret.</span>
+        <a
+            class="trn"
+            href="https://api-docs.igdb.com/#getting-started"
+            rel="noreferrer noopener"
+            target="_blank"
+        >Get IGDB API access</a>
+    </p>
 </div>
 
 <div class="param">
@@ -1563,6 +1575,59 @@
                 <option value="10">10</option>
             </select>
         </div>
+
+        <hr />
+
+        <div class="wrapper">
+            <span>
+                <span class="trn">IGDB credentials</span>
+                <button class="tooltip ttgamescredentials" title="What does this do?" aria-label="What does this do?">
+                    ?
+                </button>
+            </span>
+
+            <form id="f_gamesauth" class="network-form">
+                <div>
+                    <input
+                        id="i_games_clientid"
+                        name="games-clientid"
+                        type="text"
+                        placeholder="Client ID"
+                        maxlength="128"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <button type="submit" id="b_gamesauth">
+                        <span></span>
+                    </button>
+                </div>
+
+                <div>
+                    <input
+                        id="i_games_secret"
+                        name="games-secret"
+                        type="password"
+                        placeholder="Client secret"
+                        maxlength="256"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                </div>
+
+                <small class="network-form-warning"></small>
+            </form>
+        </div>
+
+        <p class="tooltiptext dropdown ttgamescredentials">
+            <span class="trn"
+            >Stored locally on this device only. Use this for personal setups, not shared builds.</span>
+            <a
+                class="trn"
+                href="https://api-docs.igdb.com/#getting-started"
+                rel="noreferrer noopener"
+                target="_blank"
+            >Follow IGDB setup guide</a>
+        </p>
     </div>
 </div>
 

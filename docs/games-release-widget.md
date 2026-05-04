@@ -25,18 +25,18 @@ Implemented in the repo:
 - move/layout integration
 - interface markup
 - dedicated stylesheet
-- placeholder feature module with local mock release data
-- live range, platform, and item-limit filtering against mock data
+- local-only IGDB credentials flow through settings
+- direct Twitch token exchange from the extension
+- direct IGDB release fetches from the extension
+- local cache persistence for the last successful query
+- loading, empty, and error widget states
 - horizontal scrolling card layout
-- generated mock cover art for cards
 - context-menu shortcut into games settings
 - re-render on widget enable instead of showing an empty shell
 
 Not implemented yet:
 
-- real API or proxy integration
-- local cache persistence
-- loading and retry states for network requests
+- retry controls for network failures
 - links to game detail pages
 
 ## Current Decision
@@ -64,7 +64,7 @@ It should not be merged into `weather`, `quotes`, or `main`.
 ### User-facing behavior
 
 - Optional widget, disabled by default
-- Shows the next upcoming game releases
+- Shows the next upcoming game releases when data is available
 - Presents releases as horizontally scrollable cards
 - Each item should include:
   - cover image or fallback artwork
@@ -95,19 +95,19 @@ It should not be merged into `weather`, `quotes`, or `main`.
 
 ## Data Source Decision
 
-### Preferred direction
+### Current direction
 
-Use a backend or proxy endpoint instead of calling a protected games API directly from the extension frontend.
+Use a local-only advanced mode where the user enters their own IGDB client ID and client secret in settings.
 
-### Reason
+### Tradeoff
 
-The extension is client-side and public. Exposing API credentials in the shipped bundle is not acceptable for a durable implementation.
+This is acceptable for personal local usage, but not for a shared or shipped public configuration.
 
 ### Notes
 
-- IGDB is strong on data quality, but its browser usage is a poor fit for a public frontend because it requires confidential app credentials and has browser/CORS constraints.
-- RAWG is easier for direct requests, but direct key usage in the extension is still a poor long-term choice.
-- A user-provided feed is viable for a niche advanced mode, but not ideal as the main UX.
+- IGDB requires Twitch credentials and a client-secret-based token exchange.
+- The current implementation stores those credentials in local extension storage only.
+- If direct browser access fails because of CORS or IGDB policy changes, a proxy will still be required later.
 
 ## Proposed Architecture
 
@@ -168,6 +168,15 @@ gamesCache?: {
 
 The exact type names can change during implementation.
 
+## Current Fetch Flow
+
+The extension now:
+
+1. reads `IGDB client ID` and `client secret` from local settings
+2. exchanges them against Twitch for an app access token
+3. calls `https://api.igdb.com/v4/release_dates`
+4. caches both the token and the last successful widget response locally
+
 ## Planned DOM Structure
 
 Current widget structure:
@@ -224,10 +233,9 @@ Add a dedicated feature stylesheet and import it through `src/styles/style.css`.
 
 ### Phase 3: Real fetching
 
-- Add request layer
-- Add caching
+- Add direct IGDB request implementation
 - Add refresh rules
-- Add error handling
+- Verify cache invalidation timing
 
 ### Phase 4: Polish
 
@@ -246,9 +254,9 @@ Add a dedicated feature stylesheet and import it through `src/styles/style.css`.
 
 Implement the request and cache layer without changing the UI contract:
 
-- replace mock-only request logic with a fetch abstraction
-- persist the last successful query in local storage
-- add loading and error card states beside the current empty state
-- keep the horizontal card layout and settings contract unchanged
+Refine the local IGDB mode:
 
-That keeps the widget usable now while making room for a real backend later.
+- verify platform id mapping against real responses
+- handle token refresh after auth failures
+- decide whether links to public game pages should be exposed
+- fall back to a proxy later if browser-side requests prove unreliable

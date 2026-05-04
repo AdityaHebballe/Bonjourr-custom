@@ -12,16 +12,14 @@ export function displayGames(items: GameReleaseItem[]): void {
     list.textContent = ''
 
     if (items.length === 0) {
-        const item = document.createElement('li')
-        item.className = 'games-empty'
-        item.textContent = tradThis('No upcoming releases in this range.')
-        list.appendChild(item)
+        displayGamesMessage(tradThis('No upcoming releases.'), 'games-empty')
         return
     }
 
     for (const release of items) {
         const item = document.createElement('li')
-        const cover = document.createElement('img')
+        const cover = release.cover ? document.createElement('img') : document.createElement('div')
+        const coverUrl = release.cover
         const body = document.createElement('div')
         const title = document.createElement('span')
         const meta = document.createElement('span')
@@ -34,9 +32,11 @@ export function displayGames(items: GameReleaseItem[]): void {
         meta.className = 'games-item-meta'
         date.className = 'games-item-date'
 
-        cover.src = release.cover ?? ''
-        cover.alt = ''
-        cover.decoding = 'async'
+        if (cover instanceof HTMLImageElement && coverUrl) {
+            cover.src = coverUrl
+            cover.alt = ''
+            cover.decoding = 'async'
+        }
 
         title.textContent = release.title
         meta.textContent = release.platform
@@ -46,6 +46,31 @@ export function displayGames(items: GameReleaseItem[]): void {
         item.append(cover, body)
         list.appendChild(item)
     }
+}
+
+export function displayGamesLoading(): void {
+    displayGamesMessage(tradThis('Loading upcoming releases...'), 'games-loading')
+}
+
+export function displayGamesError(): void {
+    displayGamesMessage(tradThis('Game releases are unavailable right now.'), 'games-error')
+}
+
+export function displayGamesSetup(): void {
+    displayGamesMessage(tradThis('Add your IGDB credentials in settings.'), 'games-error')
+}
+
+function displayGamesMessage(text: string, className: string): void {
+    if (!list) {
+        return
+    }
+
+    list.textContent = ''
+
+    const item = document.createElement('li')
+    item.className = className
+    item.textContent = text
+    list.appendChild(item)
 }
 
 function formatDate(value: string): string {

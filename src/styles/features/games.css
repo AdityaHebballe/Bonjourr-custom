@@ -83,7 +83,9 @@
     opacity: 0.9;
 }
 
-.games-empty {
+.games-empty,
+.games-loading,
+.games-error {
     grid-auto-columns: 100%;
     padding: 0.1em 0 0.2em;
     opacity: 0.7;
