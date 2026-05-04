@@ -184,6 +184,12 @@ export const SYNC_DEFAULT: Sync = {
         request: '',
         placeholder: '',
     },
+    games: {
+        on: false,
+        range: '14d',
+        platform: 'all',
+        limit: 5,
+    },
     quotes: {
         on: false,
         author: false,

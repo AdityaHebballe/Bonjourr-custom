@@ -1,0 +1,90 @@
+#games_container {
+    display: block;
+    width: min(58em, 100%);
+    min-width: min(20em, 100%);
+    padding: 1.1em 1.15em 1.15em;
+    color: #fff;
+    text-align: left;
+    border-radius: 1em;
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: rgba(0, 0, 0, 0.2) 0px 6px 18px;
+    backdrop-filter: blur(1.2em);
+    -webkit-backdrop-filter: blur(1.2em);
+}
+
+#games_container.hidden {
+    display: none;
+}
+
+#games_header {
+    margin-bottom: 0.9em;
+}
+
+#games_header p {
+    margin: 0;
+    font-size: 1.1em;
+    opacity: 0.8;
+}
+
+#games_list {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(10.5em, 12.5em);
+    justify-content: center;
+    column-gap: 0.9em;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+}
+
+.games-item {
+    display: grid;
+    min-width: 0;
+    border-radius: 0.9em;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    scroll-snap-align: start;
+}
+
+.games-item-cover {
+    display: block;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.games-item-body {
+    display: grid;
+    gap: 0.3em;
+    padding: 0.75em 0.8em 0.85em;
+}
+
+.games-item-title {
+    display: block;
+    font-size: 0.98em;
+    line-height: 1.35;
+}
+
+.games-item-meta {
+    display: block;
+    font-size: 0.82em;
+    opacity: 0.7;
+}
+
+.games-item-date {
+    font-size: 0.88em;
+    opacity: 0.9;
+}
+
+.games-empty {
+    grid-auto-columns: 100%;
+    padding: 0.1em 0 0.2em;
+    opacity: 0.7;
+}

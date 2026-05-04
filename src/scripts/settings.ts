@@ -10,6 +10,7 @@ import { hideElements } from './features/hide.ts'
 import { linksImport } from './features/links/bookmarks.ts'
 import { quickLinks } from './features/links/index.ts'
 import { searchbar } from './features/searchbar.ts'
+import { games } from './features/games/index.ts'
 import { weather } from './features/weather/index.ts'
 import { quotes } from './features/quotes.ts'
 import { notes } from './features/notes.ts'
@@ -204,6 +205,9 @@ function initOptionsValues(data: Sync, local: Local): void {
     setInput('i_sb-opacity', opacityFromHex(data.searchbar?.background ?? '#fff2'))
     setInput('i_sbwidth', data.searchbar?.width ?? 30)
     setInput('i_sbrequest', data.searchbar?.request || '')
+    setInput('i_games_range', data.games?.range ?? '14d')
+    setInput('i_games_platform', data.games?.platform ?? 'all')
+    setInput('i_games_limit', data.games?.limit ?? 5)
     setInput('i_qtfreq', data.quotes?.frequency || 'day')
     setInput('i_qttype', data.quotes?.type || 'classic')
     setInput('i_qtlist', userQuotes ?? '')
@@ -254,6 +258,7 @@ function initOptionsValues(data: Sync, local: Local): void {
     setCheckbox('i_greethide', !data.hide?.greetings)
     setCheckbox('i_notes', data.notes?.on ?? false)
     setCheckbox('i_sb', data.searchbar?.on ?? false)
+    setCheckbox('i_games', data.games?.on ?? false)
     setCheckbox('i_quotes', data.quotes?.on ?? false)
     setCheckbox('i_pomodoro', data.pomodoro?.on ?? false)
     setCheckbox('i_pmdr_sound', data.pomodoro?.sound ?? true)
@@ -314,6 +319,7 @@ function initOptionsValues(data: Sync, local: Local): void {
     paramId('notes_options')?.classList.toggle('shown', data.notes?.on)
     paramId('searchbar_options')?.classList.toggle('shown', data.searchbar?.on)
     paramId('searchbar_request')?.classList.toggle('shown', data.searchbar?.engine === 'custom')
+    paramId('games_options')?.classList.toggle('shown', data.games?.on)
     paramId('quotes_options')?.classList.toggle('shown', data.quotes?.on)
 
     // Page layout
@@ -835,6 +841,24 @@ function initOptionsEvents(): void {
 
     paramId('i_sbplaceholder').addEventListener('change', () => {
         paramId('i_sbplaceholder').blur()
+    })
+
+    // Games
+
+    onclickdown(paramId('i_games'), (_, target) => {
+        moveElements(undefined, { widget: ['games', target.checked] })
+    })
+
+    paramId('i_games_range').addEventListener('change', function (): void {
+        games(undefined, { range: this.value })
+    })
+
+    paramId('i_games_platform').addEventListener('change', function (): void {
+        games(undefined, { platform: this.value })
+    })
+
+    paramId('i_games_limit').addEventListener('change', function (): void {
+        games(undefined, { limit: this.value })
     })
 
     // Quotes
