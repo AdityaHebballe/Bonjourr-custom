@@ -250,6 +250,7 @@ function handleToggle(state: boolean): void {
 
 function setGamesCardSize(size = 11.5): void {
     document.documentElement.style.setProperty('--games-card-width', `${size.toString()}em`)
+    document.documentElement.style.setProperty('--games-card-scale', (size / 11.5).toFixed(3))
 }
 
 function isGamesRange(value = ''): value is GamesRange {
