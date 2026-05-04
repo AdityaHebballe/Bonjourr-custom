@@ -4,10 +4,17 @@ import type { GameReleaseItem } from '../../../types/shared.ts'
 
 const list = document.getElementById('games_list')
 
-export function displayGames(items: GameReleaseItem[], preserveScroll = false, interactive = false): void {
+export function displayGames(
+    items: GameReleaseItem[],
+    preserveScroll = false,
+    interactive = false,
+    loadingMore = false,
+): void {
     if (!list) {
         return
     }
+
+    const previousScrollLeft = preserveScroll ? list.scrollLeft : 0
 
     list.textContent = ''
 
@@ -16,7 +23,16 @@ export function displayGames(items: GameReleaseItem[], preserveScroll = false, i
         return
     }
 
+    let currentMonth = ''
+
     for (const release of items) {
+        const releaseMonth = formatMonth(release.releaseDate)
+
+        if (releaseMonth !== currentMonth) {
+            currentMonth = releaseMonth
+            list.appendChild(createMonthSeparator(releaseMonth))
+        }
+
         const item = document.createElement('li')
         const cover = release.cover ? document.createElement('img') : document.createElement('div')
         const coverUrl = release.cover
@@ -55,7 +71,11 @@ export function displayGames(items: GameReleaseItem[], preserveScroll = false, i
         list.appendChild(item)
     }
 
-    syncGamesScroller(preserveScroll)
+    if (loadingMore) {
+        list.appendChild(createLoadingIndicator())
+    }
+
+    syncGamesScroller(preserveScroll, previousScrollLeft)
 }
 
 export function displayGamesLoading(): void {
@@ -82,7 +102,7 @@ function displayGamesMessage(text: string, className: string): void {
     item.textContent = text
     list.appendChild(item)
 
-    syncGamesScroller(false)
+    syncGamesScroller(false, 0)
 }
 
 function formatDate(value: string): string {
@@ -94,7 +114,42 @@ function formatDate(value: string): string {
     }).format(date)
 }
 
-function syncGamesScroller(preserveScroll: boolean): void {
+function formatMonth(value: string): string {
+    const date = new Date(value)
+
+    return new Intl.DateTimeFormat(undefined, {
+        month: 'long',
+        year: 'numeric',
+    }).format(date)
+}
+
+function createMonthSeparator(text: string): HTMLLIElement {
+    const item = document.createElement('li')
+    const label = document.createElement('span')
+
+    item.className = 'games-separator'
+    label.className = 'games-separator-label'
+    label.textContent = text
+    item.appendChild(label)
+
+    return item
+}
+
+function createLoadingIndicator(): HTMLLIElement {
+    const item = document.createElement('li')
+    const spinner = document.createElement('span')
+    const text = document.createElement('span')
+
+    item.className = 'games-loading-more'
+    spinner.className = 'games-loading-more-spinner'
+    text.className = 'games-loading-more-text'
+    text.textContent = tradThis('Loading')
+    item.append(spinner, text)
+
+    return item
+}
+
+function syncGamesScroller(preserveScroll: boolean, previousScrollLeft: number): void {
     if (!list) {
         return
     }
@@ -102,6 +157,10 @@ function syncGamesScroller(preserveScroll: boolean): void {
     requestAnimationFrame(() => {
         const hasOverflow = list.scrollWidth > list.clientWidth + 1
         list.classList.toggle('centered', !hasOverflow)
+
+        if (preserveScroll && hasOverflow) {
+            list.scrollLeft = previousScrollLeft
+        }
 
         if (!preserveScroll && hasOverflow && list.scrollLeft !== 0) {
             list.scrollLeft = 0

@@ -16,15 +16,18 @@ type GamesEvent = {
 
 const container = document.getElementById('games_container')
 const list = document.getElementById('games_list')
-const GAMES_PAGE_SIZE = 12
+const GAMES_WINDOW_LIMIT = 24
 const GAMES_CACHE_REFRESH_AGE = 1000 * 60 * 60 * 24
+const GAMES_SCROLL_WINDOW = 1000 * 60 * 60 * 24 * 30
+const GAMES_EMPTY_WINDOW_LOOKAHEAD = 6
 let currentRender = 0
 let activeQuery: GamesQuery | undefined
 let renderedItems: GameReleaseItem[] = []
-let currentOffset = 0
 let hasMorePages = false
 let loadingMore = false
 let canSearchGames = false
+let nextWindowStart = 0
+let nextWindowEnd = 0
 
 export function games(init?: Games, event?: GamesEvent): void {
     if (event) {
@@ -86,7 +89,7 @@ queueMicrotask(() => {
                 return
             }
 
-            list.scrollLeft += delta
+            list.scrollBy({ left: delta })
             event.preventDefault()
 
             if (list.scrollLeft + list.clientWidth >= list.scrollWidth - 160) {
@@ -142,15 +145,18 @@ async function renderGames(config: Games): Promise<void> {
     const query: GamesQuery = {
         range: config.range,
         platform: config.platform,
-        limit: GAMES_PAGE_SIZE,
+        limit: GAMES_WINDOW_LIMIT,
         minHypes: config.minHypes,
     }
+    const initialStart = Date.now()
+    const initialEnd = initialStart + getRangeDuration(config.range)
 
     activeQuery = query
     renderedItems = []
-    currentOffset = 0
-    hasMorePages = false
+    hasMorePages = true
     loadingMore = false
+    nextWindowStart = initialEnd + 1000
+    nextWindowEnd = nextWindowStart + GAMES_SCROLL_WINDOW
 
     displayGamesLoading()
 
@@ -180,11 +186,9 @@ async function renderGames(config: Games): Promise<void> {
 
         if (cacheMatches && local.gamesCache) {
             renderedItems = mergeGames([], local.gamesCache.items)
-            currentOffset = Math.max(query.limit * 6, 24)
-            hasMorePages = !!local.gamesCache.hasMore
 
             if (renderId === currentRender) {
-                displayGames(renderedItems, false, canSearchGames)
+                displayGames(renderedItems, false, canSearchGames, false)
             }
 
             if (!cacheIsDailyStale) {
@@ -192,7 +196,7 @@ async function renderGames(config: Games): Promise<void> {
             }
         }
 
-        const { items, hasMore, local: localPatch } = await requestGameReleaseItems(query, local, 0, cacheIsDailyStale)
+        const { items, local: localPatch } = await requestGameReleaseItems(activeQuery, local, cacheIsDailyStale)
 
         if (Object.keys(localPatch).length > 0) {
             storage.local.set(localPatch)
@@ -203,9 +207,8 @@ async function renderGames(config: Games): Promise<void> {
         }
 
         renderedItems = mergeGames([], items)
-        currentOffset = Math.max(query.limit * 6, 24)
-        hasMorePages = hasMore
-        displayGames(renderedItems, false, canSearchGames)
+        hasMorePages = true
+        displayGames(renderedItems, false, canSearchGames, false)
     } catch (_error) {
         if (renderId !== currentRender) {
             return
@@ -233,26 +236,42 @@ async function loadMoreGames(): Promise<void> {
     }
 
     loadingMore = true
+    displayGames(renderedItems, true, canSearchGames, true)
 
     try {
-        const local = await storage.local.get([
-            'gamesCache',
-            'igdbClientId',
-            'igdbClientSecret',
-            'igdbAccessToken',
-            'igdbAccessTokenExpiresAt',
-        ])
+        let collected: GameReleaseItem[] = []
+        let windowsTried = 0
 
-        const { items, hasMore, local: localPatch } = await requestGameReleaseItems(activeQuery, local, currentOffset)
+        while (windowsTried < GAMES_EMPTY_WINDOW_LOOKAHEAD && collected.length === 0) {
+            const local = await storage.local.get([
+                'gamesCache',
+                'igdbClientId',
+                'igdbClientSecret',
+                'igdbAccessToken',
+                'igdbAccessTokenExpiresAt',
+            ])
+            const windowQuery: GamesQuery = {
+                ...activeQuery,
+                startAt: nextWindowStart,
+                endAt: nextWindowEnd,
+            }
+            const { items, local: localPatch } = await requestGameReleaseItems(windowQuery, local)
 
-        if (Object.keys(localPatch).length > 0) {
-            storage.local.set(localPatch)
+            if (Object.keys(localPatch).length > 0) {
+                storage.local.set(localPatch)
+            }
+
+            collected = mergeGames(collected, items)
+            nextWindowStart = nextWindowEnd + 1000
+            nextWindowEnd = nextWindowStart + GAMES_SCROLL_WINDOW
+            windowsTried += 1
         }
 
-        renderedItems = mergeGames(renderedItems, items)
-        currentOffset += Math.max(activeQuery.limit * 6, 24)
-        hasMorePages = hasMore
-        displayGames(renderedItems, true, canSearchGames)
+        renderedItems = mergeGames(renderedItems, collected)
+        hasMorePages = collected.length > 0
+        displayGames(renderedItems, true, canSearchGames, false)
+    } catch (_error) {
+        displayGames(renderedItems, true, canSearchGames, false)
     } finally {
         loadingMore = false
     }
@@ -354,4 +373,16 @@ function doesCacheMatchQuery(
         cache.query.platform === query.platform &&
         cache.query.minHypes === query.minHypes &&
         cache.query.limit === query.limit
+}
+
+function getRangeDuration(range: GamesRange): number {
+    if (range === '7d') {
+        return 7 * 24 * 60 * 60 * 1000
+    }
+
+    if (range === '14d') {
+        return 14 * 24 * 60 * 60 * 1000
+    }
+
+    return 30 * 24 * 60 * 60 * 1000
 }

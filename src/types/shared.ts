@@ -120,6 +120,8 @@ export interface GamesQuery {
     platform: GamesPlatform
     limit: number
     minHypes: GamesHypes
+    startAt?: number
+    endAt?: number
 }
 
 export interface SimpleWeather {

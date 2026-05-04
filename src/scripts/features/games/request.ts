@@ -18,20 +18,19 @@ type GamesLocalState = {
 export async function requestGameReleaseItems(
     query: GamesQuery,
     local: GamesLocalState,
-    offset = 0,
     forceRefresh = false,
 ): Promise<{ items: GameReleaseItem[]; hasMore: boolean; local: Partial<GamesLocalState> }> {
     if (!hasIgdbCredentials(local)) {
         return { items: [], hasMore: false, local: {} }
     }
 
-    if (!forceRefresh && offset === 0 && local.gamesCache && isFreshCache(query, local.gamesCache)) {
+    if (!forceRefresh && query.startAt === undefined && local.gamesCache && isFreshCache(query, local.gamesCache)) {
         return { items: local.gamesCache.items, hasMore: !!local.gamesCache.hasMore, local: {} }
     }
 
     try {
         const auth = await getValidIgdbAccessToken(local)
-        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken, offset)
+        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken)
 
         if (!response || response.status !== 200) {
             throw new Error('Cannot get games')
@@ -43,14 +42,14 @@ export async function requestGameReleaseItems(
             fetchedAt: Date.now(),
             query,
             items,
-            hasMore,
+            hasMore: query.startAt === undefined ? hasMore : false,
         }
 
         return {
             items,
-            hasMore,
+            hasMore: query.startAt === undefined ? hasMore : false,
             local: {
-                gamesCache: offset === 0 ? nextCache : local.gamesCache,
+                gamesCache: query.startAt === undefined ? nextCache : local.gamesCache,
                 igdbAccessToken: auth.accessToken,
                 igdbAccessTokenExpiresAt: auth.expiresAt,
             },
@@ -58,7 +57,7 @@ export async function requestGameReleaseItems(
     } catch (_error) {
         const staleCache = local.gamesCache
 
-        if (staleCache && cacheMatchesQuery(query, staleCache)) {
+        if (query.startAt === undefined && staleCache && cacheMatchesQuery(query, staleCache)) {
             return { items: staleCache.items, hasMore: !!staleCache.hasMore, local: {} }
         }
 
@@ -157,9 +156,8 @@ async function fetchIgdbReleaseDates(
     query: GamesQuery,
     clientId: string,
     accessToken: string,
-    offset: number,
 ): Promise<Response | undefined> {
-    const body = createReleaseDatesQuery(query, offset)
+    const body = createReleaseDatesQuery(query)
 
     try {
         return await fetch(IGDB_RELEASE_DATES_URL, {
@@ -192,10 +190,10 @@ async function fetchIgdbConnectionCheck(clientId: string, accessToken: string): 
     }
 }
 
-function createReleaseDatesQuery(query: GamesQuery, offset: number): string {
+function createReleaseDatesQuery(query: GamesQuery): string {
     const now = Date.now()
-    const start = Math.floor(now / 1000)
-    const end = Math.floor((now + getRangeDuration(query.range)) / 1000)
+    const start = Math.floor((query.startAt ?? now) / 1000)
+    const end = Math.floor((query.endAt ?? (now + getRangeDuration(query.range))) / 1000)
     const platformFilter = getPlatformFilter(query.platform)
     const hypeFilter = query.minHypes > 0 ? ` & game.hypes >= ${query.minHypes}` : ''
     const fetchLimit = Math.max(query.limit * 6, 24)
@@ -205,7 +203,6 @@ function createReleaseDatesQuery(query: GamesQuery, offset: number): string {
         `where date >= ${start} & date <= ${end} & game != null & game.version_parent = null${platformFilter}${hypeFilter};`,
         'sort date asc;',
         `limit ${fetchLimit};`,
-        `offset ${offset};`,
     ].join(' ')
 }
 
