@@ -190,6 +190,7 @@ export const SYNC_DEFAULT: Sync = {
         platform: 'all',
         limit: 5,
         minHypes: 0,
+        size: 11.5,
     },
     quotes: {
         on: false,

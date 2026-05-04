@@ -12,6 +12,7 @@ type GamesEvent = {
     range?: string
     platform?: string
     minHypes?: number
+    size?: number
 }
 
 const container = document.getElementById('games_container')
@@ -129,6 +130,10 @@ async function updateGames(event: GamesEvent): Promise<void> {
         games.minHypes = Math.max(0, Math.min(100, Math.round(event.minHypes)))
     }
 
+    if (typeof event.size === 'number') {
+        games.size = Math.max(9, Math.min(16, event.size))
+    }
+
     await renderGames(games)
     eventDebounce({ games })
 }
@@ -137,6 +142,7 @@ async function renderGames(config: Games): Promise<void> {
     const renderId = ++currentRender
 
     handleToggle(config.on)
+    setGamesCardSize(config.size)
 
     if (!config.on) {
         return
@@ -220,6 +226,10 @@ async function renderGames(config: Games): Promise<void> {
 
 function handleToggle(state: boolean): void {
     container?.classList.toggle('hidden', !state)
+}
+
+function setGamesCardSize(size = 11.5): void {
+    document.documentElement.style.setProperty('--games-card-width', `${size.toString()}em`)
 }
 
 function isGamesRange(value = ''): value is GamesRange {

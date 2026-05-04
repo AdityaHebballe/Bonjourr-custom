@@ -1,141 +1,165 @@
 # Games Release Widget
 
-This document tracks the planned implementation of a games release schedule feature for Bonjourr.
+This document describes the current `games` widget implementation in Bonjourr.
 
 ## Goal
 
-Add a new movable widget that shows upcoming game releases in the new tab page.
+Show upcoming game releases as a movable widget on the new tab page, with live data from IGDB and a horizontally scrollable card strip.
 
-The first version should be small and stable:
+## Current Behavior
 
-- Show upcoming releases only
-- Support a limited number of visible items
-- Support a small set of filters
-- Cache results locally
-- Fit Bonjourr's existing feature architecture
+The widget is implemented and working in the repo.
 
-## Current Status
+What it does now:
 
-Implemented in the repo:
+- optional movable widget, disabled by default
+- live release data from IGDB
+- local-only credential flow through settings
+- horizontally scrollable cover cards
+- mouse wheel maps to horizontal scrolling inside the widget
+- automatic loading of the next 30-day release window when the user reaches the end
+- month separators inserted into the strip
+- local cache for the initial query
+- loading, empty, setup, and error states
+- right-click shortcut to open games settings
+- optional click-to-search behavior using Bonjourr's search engine settings
+- card size slider in settings
 
-- tracking doc
-- `games` widget type and default sync state
-- startup registration
-- settings section and wiring
-- move/layout integration
-- interface markup
-- dedicated stylesheet
-- local-only IGDB credentials flow through settings
-- direct Twitch token exchange from the extension
-- direct IGDB release fetches from the extension
-- local cache persistence for the last successful query
-- loading, empty, and error widget states
-- horizontal scrolling card layout
-- context-menu shortcut into games settings
-- re-render on widget enable instead of showing an empty shell
+## Data Source
 
-Not implemented yet:
+The widget currently uses IGDB directly from the extension.
 
-- retry controls for network failures
-- links to game detail pages
+Flow:
 
-## Current Decision
+1. user enters `IGDB client ID` and `client secret` in settings
+2. the extension exchanges those credentials with Twitch for an app token
+3. the extension queries IGDB `release_dates`
+4. results are normalized into widget cards
 
-The feature should be implemented as a new widget named `games`.
+This is a local-only advanced mode. It is acceptable for personal usage, but not ideal for a public/shared extension setup because credentials live client-side.
 
-It should follow the same general pattern as existing feature modules such as:
+Official reference:
 
-- `weather`
-- `quotes`
-- `notes`
-- `pomodoro`
+- IGDB getting started: https://api-docs.igdb.com/#getting-started
 
-It should not be merged into `weather`, `quotes`, or `main`.
+## Widget UI
 
-## Why A Separate Widget
+Widget markup:
 
-- It matches the existing movable widget architecture
-- It keeps settings isolated
-- It keeps rendering and storage logic simple
-- It makes future expansion easier, especially for watchlists
+```html
+<div id="games_container" class="hidden">
+    <div id="games_header">
+        <p>Upcoming releases</p>
+    </div>
 
-## Recommended MVP
+    <ul id="games_list"></ul>
+</div>
+```
 
-### User-facing behavior
+The card list is rendered from `display.ts` with direct DOM creation.
 
-- Optional widget, disabled by default
-- Shows the next upcoming game releases when data is available
-- Presents releases as horizontally scrollable cards
-- Each item should include:
-  - cover image or fallback artwork
-  - game title
-  - release date
-  - platform or short platform label
-- Basic empty state
-- Basic loading state
-- Basic error state
+Each card shows:
 
-### MVP settings
+- cover image
+- game title
+- merged platform label
+- release date
 
-- Enable / disable
-- Time window:
+If multiple release rows match the same game, the widget merges them into a single card and unions platform labels.
+
+## Settings
+
+The widget currently exposes:
+
+- enable / disable
+- release window:
   - next 7 days
   - next 14 days
   - next 30 days
-- Platform filter:
+- platform filter:
   - all
   - PC
   - PlayStation
   - Xbox
   - Nintendo
-- Item count:
-  - 3
-  - 5
-  - 10
+- minimum hypes slider
+- card size slider
+- IGDB client ID / client secret verification form
 
-## Data Source Decision
+## Search Interaction
 
-### Current direction
+If Bonjourr search is enabled:
 
-Use a local-only advanced mode where the user enters their own IGDB client ID and client secret in settings.
+- clicking a card searches the game title
+- keyboard activation with `Enter` / `Space` also searches the title
+- the widget uses the same configured search engine behavior as the main search bar
 
-### Tradeoff
+If search is disabled:
 
-This is acceptable for personal local usage, but not for a shared or shipped public configuration.
+- cards are not interactive
+- no click action is attached
+- no interactive hover treatment is shown
 
-### Notes
+## Scroll / Pagination Model
 
-- IGDB requires Twitch credentials and a client-secret-based token exchange.
-- The current implementation stores those credentials in local extension storage only.
-- If direct browser access fails because of CORS or IGDB policy changes, a proxy will still be required later.
+The widget no longer uses a fixed visible-item count.
 
-## Proposed Architecture
+Current model:
 
-### New files
+- initial query uses the selected release window (`7d`, `14d`, `30d`)
+- when the user reaches the end of the strip, the widget loads the next 30-day window
+- if a 30-day window is empty, it can look ahead across multiple windows before stopping
+- a small loading indicator appears at the end of the strip while the next batch is loading
+
+The list also inserts month separators like:
+
+- `May 2026`
+- `June 2026`
+
+This keeps long scrolling runs easier to scan.
+
+## Caching
+
+Current local cache behavior:
+
+- the last successful initial widget query is cached locally
+- cache max age is 30 days
+- if the cache is less than 1 day old, it is used directly
+- if the cache is older than 1 day but still valid, cached content can be shown first and then refreshed
+
+The cache key currently depends on:
+
+- range
+- platform
+- min hypes
+- limit
+
+Rolling forward-scroll windows are fetched live and are not persisted as the main cached widget response.
+
+## File Map
+
+Main implementation files:
 
 - `src/scripts/features/games/index.ts`
 - `src/scripts/features/games/request.ts`
 - `src/scripts/features/games/display.ts`
 - `src/styles/features/games.css`
 
-### Existing files that will need changes
+Other integration points:
 
 - `src/index.html`
 - `src/settings.html`
-- `src/styles/style.css`
-- `src/scripts/index.ts`
 - `src/scripts/settings.ts`
 - `src/scripts/defaults.ts`
-- `src/scripts/features/move/helpers.ts`
+- `src/types/shared.ts`
 - `src/types/sync.ts`
 - `src/types/local.ts`
-- `src/types/shared.ts`
-- `_locales/en/translations.json`
-- `_locales/en/messages.json`
+- `src/scripts/features/contextmenu.ts`
+- `src/scripts/features/move/widgets.ts`
 
-### Storage shape
+## Current Sync / Local Shape
 
-Planned sync structure:
+Current sync structure:
 
 ```ts
 games: {
@@ -143,10 +167,17 @@ games: {
     range: '7d' | '14d' | '30d'
     platform: 'all' | 'pc' | 'playstation' | 'xbox' | 'nintendo'
     limit: 3 | 5 | 10
+    minHypes: number
+    size: number
 }
 ```
 
-Planned local structure:
+Notes:
+
+- `limit` is still present in sync for compatibility, but the widget no longer exposes an item-count setting in the UI.
+- visual pagination is now driven by scrolling and rolling date windows instead.
+
+Current local structure includes:
 
 ```ts
 gamesCache?: {
@@ -154,109 +185,36 @@ gamesCache?: {
     query: {
         range: '7d' | '14d' | '30d'
         platform: 'all' | 'pc' | 'playstation' | 'xbox' | 'nintendo'
-        limit: 3 | 5 | 10
+        limit: number
+        minHypes: number
     }
     items: {
         id: string
         title: string
         releaseDate: string
         platform: string
+        cover?: string
         url?: string
     }[]
+    hasMore?: boolean
 }
+
+igdbClientId?: string
+igdbClientSecret?: string
+igdbAccessToken?: string
+igdbAccessTokenExpiresAt?: number
 ```
 
-The exact type names can change during implementation.
+## Current Risks / Limitations
 
-## Current Fetch Flow
+- IGDB browser access can still be fragile because this is a direct client-side integration
+- credentials are stored locally in the extension, so this approach is not ideal for public distribution
+- release-date data quality depends on IGDB and can still contain oddities around editions, early access, or duplicated release metadata
+- only the initial query is cached as the main widget state; later windows are fetched on demand
 
-The extension now:
+## Possible Future Work
 
-1. reads `IGDB client ID` and `client secret` from local settings
-2. exchanges them against Twitch for an app access token
-3. calls `https://api.igdb.com/v4/release_dates`
-4. caches both the token and the last successful widget response locally
-
-## Planned DOM Structure
-
-Current widget structure:
-
-```html
-<div id="games_container" class="hidden">
-    <div id="games_header">
-        <p>Upcoming releases</p>
-    </div>
-    <ul id="games_list"></ul>
-</div>
-```
-
-The card contents are still created with direct DOM writes in `display.ts`.
-
-## Planned Integration Points
-
-### Startup
-
-Add the feature to `src/scripts/index.ts`, similar to how `quotes`, `weather`, and `notes` are initialized.
-
-### Settings
-
-Add a new settings section in `src/settings.html` and wire events in `src/scripts/settings.ts`.
-
-### Layout editor
-
-Register `games` as a movable widget in:
-
-- `src/types/shared.ts`
-- `src/scripts/features/move/helpers.ts`
-
-### Styling
-
-Add a dedicated feature stylesheet and import it through `src/styles/style.css`.
-
-## Phases
-
-### Phase 1: Scaffolding
-
-- Add types
-- Add defaults
-- Add empty widget markup
-- Add settings markup
-- Add startup hook
-- Add move/layout support
-- Add CSS import
-
-### Phase 2: Local mock data
-
-- Render mock release items
-- Validate layout and settings behavior
-- Confirm translation and hidden-state behavior
-
-### Phase 3: Real fetching
-
-- Add direct IGDB request implementation
-- Add refresh rules
-- Verify cache invalidation timing
-
-### Phase 4: Polish
-
-- Improve item formatting
-- Improve responsive layout
-- Add links if data source supports them
-- Decide whether watchlist support is worth adding
-
-## Risks
-
-- Data-source choice may block a full implementation if there is no acceptable backend/proxy
-- Release-date data can be incomplete or platform-specific
-- A watchlist feature is much larger than the MVP and should not be mixed into the first pass
-
-## Next Concrete Step
-
-Implement the request and cache layer without changing the UI contract:
-
-Refine the local IGDB mode:
-
-- verify platform id mapping against real responses
-- handle token refresh after auth failures
-- decide whether links to public game pages should be exposed
-- fall back to a proxy later if browser-side requests prove unreliable
+- move IGDB access behind a proxy if this feature ever needs a cleaner public architecture
+- improve release-date prioritization when IGDB returns multiple dates for the same game
+- add a first-class detail link target if a better game URL source is chosen
+- persist extended forward-scroll windows if longer browsing sessions make that worthwhile
