@@ -335,7 +335,7 @@
     "Enter both IGDB client ID and client secret": "Enter both IGDB client ID and client secret",
     "IGDB connection verified": "IGDB connection verified",
     "Could not verify IGDB credentials": "Could not verify IGDB credentials",
-    "Stored locally on this device only. Use this for personal setups, not shared builds.": "Stored locally on this device only. Use this for personal setups, not shared builds.",
+    "Stored locally on this device only. Use this for personal setups.": "Stored locally on this device only. Use this for personal setups.",
     "Follow IGDB setup guide": "Follow IGDB setup guide",
     "Suggestions": "Suggestions",
     "Search engine": "Search engine",
