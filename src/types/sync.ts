@@ -188,6 +188,7 @@ export interface Games {
     range: GamesRange
     platform: GamesPlatform
     limit: GamesLimit
+    minHypes: number
 }
 
 export interface Quotes {

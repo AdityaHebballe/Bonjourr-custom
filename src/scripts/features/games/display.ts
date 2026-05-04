@@ -4,7 +4,7 @@ import type { GameReleaseItem } from '../../../types/shared.ts'
 
 const list = document.getElementById('games_list')
 
-export function displayGames(items: GameReleaseItem[]): void {
+export function displayGames(items: GameReleaseItem[], preserveScroll = false): void {
     if (!list) {
         return
     }
@@ -46,6 +46,8 @@ export function displayGames(items: GameReleaseItem[]): void {
         item.append(cover, body)
         list.appendChild(item)
     }
+
+    syncGamesScroller(preserveScroll)
 }
 
 export function displayGamesLoading(): void {
@@ -71,6 +73,8 @@ function displayGamesMessage(text: string, className: string): void {
     item.className = className
     item.textContent = text
     list.appendChild(item)
+
+    syncGamesScroller(false)
 }
 
 function formatDate(value: string): string {
@@ -80,4 +84,19 @@ function formatDate(value: string): string {
         month: 'short',
         day: 'numeric',
     }).format(date)
+}
+
+function syncGamesScroller(preserveScroll: boolean): void {
+    if (!list) {
+        return
+    }
+
+    requestAnimationFrame(() => {
+        const hasOverflow = list.scrollWidth > list.clientWidth + 1
+        list.classList.toggle('centered', !hasOverflow)
+
+        if (!preserveScroll && hasOverflow && list.scrollLeft !== 0) {
+            list.scrollLeft = 0
+        }
+    })
 }

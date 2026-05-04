@@ -13,6 +13,7 @@ export type PomodoroMode = 'pomodoro' | 'break' | 'longbreak'
 export type GamesRange = '7d' | '14d' | '30d'
 export type GamesPlatform = 'all' | 'pc' | 'playstation' | 'xbox' | 'nintendo'
 export type GamesLimit = 3 | 5 | 10
+export type GamesHypes = number
 export type SearchEngines =
     | 'default'
     | 'google'
@@ -117,7 +118,8 @@ export interface GameReleaseItem {
 export interface GamesQuery {
     range: GamesRange
     platform: GamesPlatform
-    limit: GamesLimit
+    limit: number
+    minHypes: GamesHypes
 }
 
 export interface SimpleWeather {

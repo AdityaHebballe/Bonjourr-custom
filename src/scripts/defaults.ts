@@ -189,6 +189,7 @@ export const SYNC_DEFAULT: Sync = {
         range: '14d',
         platform: 'all',
         limit: 5,
+        minHypes: 0,
     },
     quotes: {
         on: false,

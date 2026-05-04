@@ -1568,12 +1568,17 @@
         <hr />
 
         <div class="wrapper">
-            <label for="i_games_limit" class="trn">Items to show</label>
-            <select id="i_games_limit">
-                <option value="3">3</option>
-                <option value="5">5</option>
-                <option value="10">10</option>
-            </select>
+            <label for="i_games_hypes" class="trn">Minimum hypes</label>
+            <input
+                id="i_games_hypes"
+                type="range"
+                name="i_games_hypes"
+                min="0"
+                max="100"
+                step="5"
+                value="0"
+                class="range"
+            />
         </div>
 
         <hr />
@@ -1587,7 +1592,7 @@
             </span>
 
             <form id="f_gamesauth" class="network-form">
-                <div>
+                <div class="games-auth-row">
                     <input
                         id="i_games_clientid"
                         name="games-clientid"
@@ -1597,12 +1602,9 @@
                         autocomplete="off"
                         spellcheck="false"
                     />
-                    <button type="submit" id="b_gamesauth">
-                        <span></span>
-                    </button>
                 </div>
 
-                <div>
+                <div class="games-auth-row">
                     <input
                         id="i_games_secret"
                         name="games-secret"
@@ -1612,6 +1614,9 @@
                         autocomplete="off"
                         spellcheck="false"
                     />
+                    <button type="submit" id="b_gamesauth">
+                        <span></span>
+                    </button>
                 </div>
 
                 <small class="network-form-warning"></small>

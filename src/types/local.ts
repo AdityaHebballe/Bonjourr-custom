@@ -97,6 +97,7 @@ export interface GamesCache {
     fetchedAt: number
     query: GamesQuery
     items: GameReleaseItem[]
+    hasMore?: boolean
 }
 
 export type Translations = {

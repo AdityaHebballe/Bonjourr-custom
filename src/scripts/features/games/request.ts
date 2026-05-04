@@ -1,8 +1,9 @@
 import type { GamesCache } from '../../../types/local.ts'
 import type { GameReleaseItem, GamesQuery } from '../../../types/shared.ts'
 
-const GAMES_CACHE_MAX_AGE = 1000 * 60 * 60 * 6
+const GAMES_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30
 const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
+const IGDB_GAMES_URL = 'https://api.igdb.com/v4/games'
 const IGDB_RELEASE_DATES_URL = 'https://api.igdb.com/v4/release_dates'
 const IGDB_COVER_BASE_URL = 'https://images.igdb.com/igdb/image/upload/t_cover_big'
 
@@ -17,35 +18,39 @@ type GamesLocalState = {
 export async function requestGameReleaseItems(
     query: GamesQuery,
     local: GamesLocalState,
-): Promise<{ items: GameReleaseItem[]; local: Partial<GamesLocalState> }> {
+    offset = 0,
+    forceRefresh = false,
+): Promise<{ items: GameReleaseItem[]; hasMore: boolean; local: Partial<GamesLocalState> }> {
     if (!hasIgdbCredentials(local)) {
-        return { items: [], local: {} }
+        return { items: [], hasMore: false, local: {} }
     }
 
-    if (local.gamesCache && isFreshCache(query, local.gamesCache)) {
-        return { items: local.gamesCache.items, local: {} }
+    if (!forceRefresh && offset === 0 && local.gamesCache && isFreshCache(query, local.gamesCache)) {
+        return { items: local.gamesCache.items, hasMore: !!local.gamesCache.hasMore, local: {} }
     }
 
     try {
         const auth = await getValidIgdbAccessToken(local)
-        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken)
+        const response = await fetchIgdbReleaseDates(query, local.igdbClientId, auth.accessToken, offset)
 
         if (!response || response.status !== 200) {
             throw new Error('Cannot get games')
         }
 
         const json = await response.json() as unknown
-        const items = sanitizeGameReleaseItems(json, query)
+        const { items, hasMore } = sanitizeGameReleaseItems(json, query)
         const nextCache: GamesCache = {
             fetchedAt: Date.now(),
             query,
             items,
+            hasMore,
         }
 
         return {
             items,
+            hasMore,
             local: {
-                gamesCache: nextCache,
+                gamesCache: offset === 0 ? nextCache : local.gamesCache,
                 igdbAccessToken: auth.accessToken,
                 igdbAccessTokenExpiresAt: auth.expiresAt,
             },
@@ -53,16 +58,36 @@ export async function requestGameReleaseItems(
     } catch (_error) {
         const staleCache = local.gamesCache
 
-        if (
-            staleCache &&
-            staleCache.query.range === query.range &&
-            staleCache.query.platform === query.platform &&
-            staleCache.query.limit === query.limit
-        ) {
-            return { items: staleCache.items, local: {} }
+        if (staleCache && cacheMatchesQuery(query, staleCache)) {
+            return { items: staleCache.items, hasMore: !!staleCache.hasMore, local: {} }
         }
 
         throw new Error('Cannot get games')
+    }
+}
+
+export async function verifyIgdbCredentials(
+    clientId: string,
+    clientSecret: string,
+): Promise<
+    Pick<GamesLocalState, 'igdbClientId' | 'igdbClientSecret' | 'igdbAccessToken' | 'igdbAccessTokenExpiresAt'>
+> {
+    const auth = await getValidIgdbAccessToken({
+        igdbClientId: clientId,
+        igdbClientSecret: clientSecret,
+    })
+
+    const response = await fetchIgdbConnectionCheck(clientId, auth.accessToken)
+
+    if (!response || response.status !== 200) {
+        throw new Error('Could not verify IGDB credentials')
+    }
+
+    return {
+        igdbClientId: clientId,
+        igdbClientSecret: clientSecret,
+        igdbAccessToken: auth.accessToken,
+        igdbAccessTokenExpiresAt: auth.expiresAt,
     }
 }
 
@@ -73,7 +98,8 @@ function isFreshCache(query: GamesQuery, cache: GamesCache): boolean {
 function cacheMatchesQuery(query: GamesQuery, cache: GamesCache): boolean {
     return cache.query.range === query.range &&
         cache.query.platform === query.platform &&
-        cache.query.limit === query.limit
+        cache.query.limit === query.limit &&
+        cache.query.minHypes === query.minHypes
 }
 
 function hasIgdbCredentials(local: GamesLocalState): local is GamesLocalState & {
@@ -131,8 +157,9 @@ async function fetchIgdbReleaseDates(
     query: GamesQuery,
     clientId: string,
     accessToken: string,
+    offset: number,
 ): Promise<Response | undefined> {
-    const body = createReleaseDatesQuery(query)
+    const body = createReleaseDatesQuery(query, offset)
 
     try {
         return await fetch(IGDB_RELEASE_DATES_URL, {
@@ -149,34 +176,55 @@ async function fetchIgdbReleaseDates(
     }
 }
 
-function createReleaseDatesQuery(query: GamesQuery): string {
+async function fetchIgdbConnectionCheck(clientId: string, accessToken: string): Promise<Response | undefined> {
+    try {
+        return await fetch(IGDB_GAMES_URL, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Client-ID': clientId,
+                Authorization: `Bearer ${accessToken}`,
+            },
+            body: 'fields id; limit 1;',
+        })
+    } catch (_error) {
+        // ...
+    }
+}
+
+function createReleaseDatesQuery(query: GamesQuery, offset: number): string {
     const now = Date.now()
     const start = Math.floor(now / 1000)
     const end = Math.floor((now + getRangeDuration(query.range)) / 1000)
     const platformFilter = getPlatformFilter(query.platform)
-    const fetchLimit = Math.max(query.limit * 3, 15)
+    const hypeFilter = query.minHypes > 0 ? ` & game.hypes >= ${query.minHypes}` : ''
+    const fetchLimit = Math.max(query.limit * 6, 24)
 
     return [
-        'fields date,game.name,game.slug,game.cover.image_id,platform.name;',
-        `where date >= ${start} & date <= ${end} & game != null & game.version_parent = null${platformFilter};`,
+        'fields date,game.id,game.name,game.slug,game.cover.image_id,platform.name,game.hypes;',
+        `where date >= ${start} & date <= ${end} & game != null & game.version_parent = null${platformFilter}${hypeFilter};`,
         'sort date asc;',
         `limit ${fetchLimit};`,
+        `offset ${offset};`,
     ].join(' ')
 }
 
-function sanitizeGameReleaseItems(value: unknown, query: GamesQuery): GameReleaseItem[] {
+function sanitizeGameReleaseItems(value: unknown, query: GamesQuery): { items: GameReleaseItem[]; hasMore: boolean } {
     if (!Array.isArray(value)) {
-        return []
+        return { items: [], hasMore: false }
     }
 
-    return value.flatMap((item): GameReleaseItem[] => {
+    const grouped = new Map<string, GameReleaseItem & { platforms: Set<string> }>()
+
+    for (const item of value) {
         if (!item || typeof item !== 'object') {
-            return []
+            continue
         }
 
-        const id = getString(item, 'id')
+        const id = getNumber(item, 'id')
         const releaseDate = getNumber(item, 'date')
         const game = getObject(item, 'game')
+        const gameId = game ? getNumber(game, 'id') : undefined
         const title = game ? getString(game, 'name') : undefined
         const cover = game ? getObject(game, 'cover') : undefined
         const imageId = cover ? getString(cover, 'image_id') : undefined
@@ -184,18 +232,45 @@ function sanitizeGameReleaseItems(value: unknown, query: GamesQuery): GameReleas
         const platformName = platformInfo ? getString(platformInfo, 'name') : undefined
 
         if (!id || !title || !releaseDate || !platformName) {
-            return []
+            continue
         }
 
-        return [{
-            id,
+        const isoDate = new Date(releaseDate * 1000).toISOString()
+        const platformLabel = simplifyPlatformLabel(platformName, query.platform)
+        const groupKey = gameId ? gameId.toString() : title
+        const existing = grouped.get(groupKey)
+
+        if (existing) {
+            existing.platforms.add(platformLabel)
+            if (!existing.cover && imageId) {
+                existing.cover = `${IGDB_COVER_BASE_URL}/${imageId}.jpg`
+            }
+            if (isoDate < existing.releaseDate) {
+                existing.releaseDate = isoDate
+            }
+            continue
+        }
+
+        grouped.set(groupKey, {
+            id: (gameId ?? id).toString(),
             title,
-            releaseDate: new Date(releaseDate * 1000).toISOString(),
-            platform: simplifyPlatformLabel(platformName, query.platform),
+            releaseDate: isoDate,
+            platform: platformLabel,
             cover: imageId ? `${IGDB_COVER_BASE_URL}/${imageId}.jpg` : undefined,
             url: undefined,
-        }]
-    }).slice(0, query.limit)
+            platforms: new Set([platformLabel]),
+        })
+    }
+
+    const items = [...grouped.values()].map(({ platforms, ...item }) => ({
+        ...item,
+        platform: [...platforms].sort(comparePlatforms).join(', '),
+    }))
+
+    return {
+        items: items.slice(0, query.limit),
+        hasMore: value.length >= Math.max(query.limit * 6, 24),
+    }
 }
 
 function getString(value: object, key: string): string | undefined {
@@ -232,7 +307,7 @@ function getPlatformFilter(platform: GamesQuery['platform']): string {
         return ''
     }
 
-    return ` & game.platforms = (${ids.join(',')})`
+    return ` & platform = (${ids.join(',')})`
 }
 
 function simplifyPlatformLabel(name: string, fallback: GamesQuery['platform']): string {
@@ -270,10 +345,15 @@ function simplifyPlatformLabel(name: string, fallback: GamesQuery['platform']): 
     return name
 }
 
+function comparePlatforms(a: string, b: string): number {
+    const order = ['PC', 'PlayStation', 'Xbox', 'Nintendo']
+    return order.indexOf(a) - order.indexOf(b)
+}
+
 const PLATFORM_FILTERS: Record<GamesQuery['platform'], number[]> = {
     all: [],
     pc: [6, 14],
-    playstation: [48, 167, 169],
+    playstation: [48, 167],
     xbox: [49, 169, 12],
     nintendo: [130, 41, 137],
 }

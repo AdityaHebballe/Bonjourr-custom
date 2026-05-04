@@ -20,6 +20,7 @@ import { togglePomodoroFocus } from './features/pomodoro.ts'
 import { openSettingsButtonEvent } from './features/contextmenu.ts'
 
 import { colorInput, fadeOut, inputThrottle, turnRefreshButton, webkitRangeTrackColor } from './shared/dom.ts'
+import { networkForm } from './shared/form.ts'
 import { BROWSER, IS_MOBILE, PLATFORM, SYNC_DEFAULT } from './defaults.ts'
 import { toggleTraduction, tradThis, traduction } from './utils/translations.ts'
 import { settingsNotifications } from './utils/notifications.ts'
@@ -39,6 +40,8 @@ import type { Sync } from '../types/sync.ts'
 import type { Local } from '../types/local.ts'
 
 // Initialization
+
+const gamesAuthForm = networkForm('f_gamesauth')
 
 let settingsInitSync: Sync
 let settingsInitLocal: Local
@@ -207,7 +210,7 @@ function initOptionsValues(data: Sync, local: Local): void {
     setInput('i_sbrequest', data.searchbar?.request || '')
     setInput('i_games_range', data.games?.range ?? '14d')
     setInput('i_games_platform', data.games?.platform ?? 'all')
-    setInput('i_games_limit', data.games?.limit ?? 5)
+    setInput('i_games_hypes', data.games?.minHypes ?? 0)
     setInput('i_games_clientid', local.igdbClientId ?? '')
     setInput('i_games_secret', local.igdbClientSecret ?? '')
     setInput('i_qtfreq', data.quotes?.frequency || 'day')
@@ -859,8 +862,8 @@ function initOptionsEvents(): void {
         games(undefined, { platform: this.value })
     })
 
-    paramId('i_games_limit').addEventListener('change', function (): void {
-        games(undefined, { limit: this.value })
+    paramId('i_games_hypes').addEventListener('input', function (): void {
+        games(undefined, { minHypes: Number(this.value) })
     })
 
     paramId('f_gamesauth').addEventListener('submit', async function (this, event): Promise<void> {
@@ -869,19 +872,34 @@ function initOptionsEvents(): void {
         const igdbClientId = paramId('i_games_clientid').value.trim()
         const igdbClientSecret = paramId('i_games_secret').value.trim()
 
-        storage.local.set({ igdbClientId, igdbClientSecret })
-        storage.local.remove('igdbAccessToken')
-        storage.local.remove('igdbAccessTokenExpiresAt')
+        if (!igdbClientId || !igdbClientSecret) {
+            gamesAuthForm.warn(tradThis('Enter both IGDB client ID and client secret'))
+            return
+        }
 
-        settingsInitLocal.igdbClientId = igdbClientId
-        settingsInitLocal.igdbClientSecret = igdbClientSecret
-        settingsInitLocal.igdbAccessToken = undefined
-        settingsInitLocal.igdbAccessTokenExpiresAt = undefined
+        gamesAuthForm.load()
 
-        const sync = await storage.sync.get('games')
+        try {
+            const { verifyIgdbCredentials } = await import('./features/games/request.ts')
+            const localPatch = await verifyIgdbCredentials(igdbClientId, igdbClientSecret)
 
-        if (sync.games?.on) {
-            games(sync.games)
+            storage.local.set(localPatch)
+
+            settingsInitLocal.igdbClientId = localPatch.igdbClientId
+            settingsInitLocal.igdbClientSecret = localPatch.igdbClientSecret
+            settingsInitLocal.igdbAccessToken = localPatch.igdbAccessToken
+            settingsInitLocal.igdbAccessTokenExpiresAt = localPatch.igdbAccessTokenExpiresAt
+
+            gamesAuthForm.success(tradThis('IGDB connection verified'))
+            setTimeout(() => gamesAuthForm.accept(), 600)
+
+            const sync = await storage.sync.get('games')
+
+            if (sync.games?.on) {
+                games(sync.games)
+            }
+        } catch (error) {
+            gamesAuthForm.warn(tradThis(error as string))
         }
     })
 
