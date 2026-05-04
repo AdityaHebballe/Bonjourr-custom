@@ -4,6 +4,7 @@ import {
     displayGamesError,
     displayGamesLoading,
     displayGamesSetup,
+    getGamesSentinel,
     toggleGamesLoadingMore,
 } from './display.ts'
 import { getGamesCacheEntry, requestGameReleaseItems } from './request.ts'
@@ -37,6 +38,7 @@ let nextWindowStart = 0
 let nextWindowEnd = 0
 let renderController: AbortController | undefined
 let loadMoreController: AbortController | undefined
+let loadMoreObserver: IntersectionObserver | undefined
 
 export function games(init?: Games, event?: GamesEvent): void {
     if (event) {
@@ -100,19 +102,17 @@ queueMicrotask(() => {
 
             list.scrollBy({ left: delta })
             event.preventDefault()
-
-            if (list.scrollLeft + list.clientWidth >= list.scrollWidth - 160) {
-                void loadMoreGames()
-            }
         },
         { passive: false },
     )
 
-    list?.addEventListener('scroll', () => {
-        if (list.scrollLeft + list.clientWidth >= list.scrollWidth - 160) {
-            void loadMoreGames()
-        }
-    })
+    if (!('IntersectionObserver' in globalThis)) {
+        list?.addEventListener('scroll', () => {
+            if (list.scrollLeft + list.clientWidth >= list.scrollWidth - 160) {
+                void loadMoreGames()
+            }
+        })
+    }
 })
 
 async function updateGames(event: GamesEvent): Promise<void> {
@@ -198,6 +198,7 @@ async function renderGames(config: Games): Promise<void> {
             }
 
             displayGamesSetup()
+            observeGamesSentinel()
             return
         }
 
@@ -206,6 +207,7 @@ async function renderGames(config: Games): Promise<void> {
 
             if (renderId === currentRender) {
                 displayGames(renderedItems, false, canSearchGames, false)
+                observeGamesSentinel()
             }
 
             if (Date.now() - cache.fetchedAt < 1000 * 60 * 60 * 24) {
@@ -231,12 +233,14 @@ async function renderGames(config: Games): Promise<void> {
         renderedItems = mergeGames([], items)
         hasMorePages = true
         displayGames(renderedItems, false, canSearchGames, false)
+        observeGamesSentinel()
     } catch (_error) {
         if (renderId !== currentRender || controller.signal.aborted) {
             return
         }
 
         displayGamesError()
+        observeGamesSentinel()
     }
 }
 
@@ -317,17 +321,19 @@ async function loadMoreGames(): Promise<void> {
 
         if (hasOverlap) {
             displayGames(renderedItems, true, canSearchGames, false)
+            observeGamesSentinel()
             return
         }
 
-        toggleGamesLoadingMore(false)
         appendGames(appendedItems, canSearchGames)
+        observeGamesSentinel()
     } catch (_error) {
         if (controller.signal.aborted) {
             return
         }
 
         toggleGamesLoadingMore(false)
+        observeGamesSentinel()
     } finally {
         loadingMore = false
     }
@@ -430,4 +436,33 @@ function getRangeDuration(range: GamesRange): number {
     }
 
     return 30 * 24 * 60 * 60 * 1000
+}
+
+function observeGamesSentinel(): void {
+    if (!list || !('IntersectionObserver' in globalThis)) {
+        return
+    }
+
+    loadMoreObserver ??= new IntersectionObserver(
+        (entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    void loadMoreGames()
+                }
+            }
+        },
+        {
+            root: list,
+            rootMargin: '0px 160px 0px 0px',
+            threshold: 0.01,
+        },
+    )
+
+    loadMoreObserver.disconnect()
+
+    const sentinel = getGamesSentinel()
+
+    if (sentinel) {
+        loadMoreObserver.observe(sentinel)
+    }
 }

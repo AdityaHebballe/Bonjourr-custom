@@ -164,6 +164,13 @@
     text-transform: uppercase;
 }
 
+.games-sentinel {
+    flex: 0 0 1px;
+    width: 1px;
+    pointer-events: none;
+    opacity: 0;
+}
+
 .games-separator {
     display: grid;
     flex: 0 0 3.8em;

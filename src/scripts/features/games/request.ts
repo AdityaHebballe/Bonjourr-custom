@@ -3,6 +3,7 @@ import type { GameReleaseItem, GamesQuery } from '../../../types/shared.ts'
 
 const GAMES_CACHE_REFRESH_AGE = 1000 * 60 * 60 * 24
 const GAMES_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30
+const GAMES_CACHE_MAX_ENTRIES = 48
 const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 const IGDB_GAMES_URL = 'https://api.igdb.com/v4/games'
 const IGDB_RELEASE_DATES_URL = 'https://api.igdb.com/v4/release_dates'
@@ -54,10 +55,10 @@ export async function requestGameReleaseItems(
             items,
             hasMore,
             local: {
-                gamesCache: {
+                gamesCache: pruneGamesCache({
                     ...getGamesCacheStore(local.gamesCache),
                     [cacheKey]: nextCache,
-                },
+                }),
                 igdbAccessToken: auth.accessToken,
                 igdbAccessTokenExpiresAt: auth.expiresAt,
             },
@@ -204,6 +205,16 @@ export function getGamesCacheEntry(
 
 function getGamesCacheStore(store: GamesCacheStore | undefined): GamesCacheStore {
     return store ?? {}
+}
+
+function pruneGamesCache(store: GamesCacheStore): GamesCacheStore {
+    const cutoff = Date.now() - GAMES_CACHE_MAX_AGE
+    const entries = Object.entries(store)
+        .filter(([, cache]) => cache.fetchedAt >= cutoff)
+        .sort(([, a], [, b]) => b.fetchedAt - a.fetchedAt)
+        .slice(0, GAMES_CACHE_MAX_ENTRIES)
+
+    return Object.fromEntries(entries)
 }
 
 async function fetchIgdbConnectionCheck(clientId: string, accessToken: string): Promise<Response | undefined> {

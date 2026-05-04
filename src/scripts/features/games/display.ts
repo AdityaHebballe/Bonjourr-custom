@@ -4,6 +4,7 @@ import type { GameReleaseItem } from '../../../types/shared.ts'
 
 const list = document.getElementById('games_list')
 const LOADING_MORE_SELECTOR = '.games-loading-more'
+const SENTINEL_SELECTOR = '.games-sentinel'
 
 export function displayGames(
     items: GameReleaseItem[],
@@ -40,6 +41,8 @@ export function displayGames(
         list.appendChild(createLoadingIndicator())
     }
 
+    list.appendChild(createScrollSentinel())
+
     syncGamesScroller(preserveScroll, previousScrollLeft)
 }
 
@@ -65,6 +68,8 @@ export function appendGames(items: GameReleaseItem[], interactive = false): void
         list.appendChild(createGameItem(release, interactive))
     }
 
+    list.appendChild(createScrollSentinel())
+
     syncGamesScroller(true, previousScrollLeft)
 }
 
@@ -81,7 +86,13 @@ export function toggleGamesLoadingMore(show: boolean): void {
         list.appendChild(createLoadingIndicator())
     }
 
+    list.appendChild(createScrollSentinel())
+
     syncGamesScroller(true, previousScrollLeft)
+}
+
+export function getGamesSentinel(): Element | null {
+    return list?.querySelector(SENTINEL_SELECTOR) ?? null
 }
 
 export function displayGamesLoading(): void {
@@ -107,6 +118,7 @@ function displayGamesMessage(text: string, className: string): void {
     item.className = className
     item.textContent = text
     list.appendChild(item)
+    list.appendChild(createScrollSentinel())
 
     syncGamesScroller(false, 0)
 }
@@ -153,6 +165,13 @@ function createLoadingIndicator(): HTMLLIElement {
     text.textContent = tradThis('Loading')
     item.append(spinner, text)
 
+    return item
+}
+
+function createScrollSentinel(): HTMLLIElement {
+    const item = document.createElement('li')
+    item.className = 'games-sentinel'
+    item.setAttribute('aria-hidden', 'true')
     return item
 }
 
@@ -206,6 +225,7 @@ function getLastRenderedMonth(): string {
 
 function removeLoadingIndicator(): void {
     list?.querySelector(LOADING_MORE_SELECTOR)?.remove()
+    list?.querySelector(SENTINEL_SELECTOR)?.remove()
 }
 
 function syncGamesScroller(preserveScroll: boolean, previousScrollLeft: number): void {
