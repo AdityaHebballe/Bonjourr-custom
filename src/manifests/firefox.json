@@ -41,7 +41,7 @@
     ],
     "browser_specific_settings": {
         "gecko": {
-            "id": "{4f391a9e-8717-4ba6-a5b1-488a34931fcb}",
+            "id": "@bonjourr-plus-adityahebballe",
             "strict_min_version": "109.0",
             "update_url": "https://raw.githubusercontent.com/AdityaHebballe/Bonjourr-custom/firefox-updates/updates.json"
         }
