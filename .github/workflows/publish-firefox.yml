@@ -86,12 +86,18 @@ jobs:
               env:
                   AMO_JWT_TOKEN: ${{ steps.jwt.outputs.token }}
               run: |
-                  curl --fail-with-body -g -X PUT \
+                  status=$(curl -sS -o amo-status.json -w "%{http_code}" -g -X PUT \
                       -H "Authorization: JWT $AMO_JWT_TOKEN" \
                       -F "upload=@bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}-unsigned.xpi" \
                       -F "channel=unlisted" \
-                      "https://addons.mozilla.org/api/v4/addons/${{ steps.manifest.outputs.guid }}/versions/${{ steps.manifest.outputs.version }}/" \
-                      -o amo-status.json
+                      "https://addons.mozilla.org/api/v4/addons/${{ steps.manifest.outputs.guid }}/versions/${{ steps.manifest.outputs.version }}/")
+
+                  if [ "$status" = "200" ] || [ "$status" = "201" ] || [ "$status" = "202" ] || [ "$status" = "409" ]; then
+                      exit 0
+                  fi
+
+                  cat amo-status.json
+                  exit 1
 
             - name: Wait for AMO signing
               if: steps.version.outputs.publish == 'true'
