@@ -233,8 +233,8 @@ async function renderGames(config: Games): Promise<void> {
         const { items, local: localPatch } = await requestGameReleaseItems(
             query,
             local,
-            !!cache,
             controller.signal,
+            !!cache,
         )
 
         if (Object.keys(localPatch).length > 0) {
@@ -308,8 +308,8 @@ async function loadMoreGames(): Promise<void> {
             const { items, local: requestLocalPatch } = await requestGameReleaseItems(
                 windowQuery,
                 localState,
-                false,
                 controller.signal,
+                false,
             )
 
             if (Object.keys(requestLocalPatch).length > 0) {

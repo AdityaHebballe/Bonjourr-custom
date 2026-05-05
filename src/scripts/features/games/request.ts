@@ -23,8 +23,8 @@ type GamesLocalState = {
 export async function requestGameReleaseItems(
     query: GamesQuery,
     local: GamesLocalState,
-    forceRefresh = false,
     signal?: AbortSignal,
+    forceRefresh = false,
 ): Promise<{ items: GameReleaseItem[]; hasMore: boolean; local: Partial<GamesLocalState> }> {
     if (!hasIgdbCredentials(local)) {
         return { items: [], hasMore: false, local: {} }
