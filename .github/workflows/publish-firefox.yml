@@ -106,15 +106,15 @@ jobs:
 
                       processed=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.processed))")
                       valid=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.valid))")
-                      reviewed=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.reviewed))")
-                      passed_review=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.passed_review))")
+                      signed=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.files?.[0]?.signed ?? false))")
+                      download_url=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(data.files?.[0]?.download_url ?? '')")
 
                       if [ "$processed" = "true" ] && [ "$valid" != "true" ]; then
                           cat amo-status.json
                           exit 1
                       fi
 
-                      if [ "$processed" = "true" ] && [ "$reviewed" = "true" ] && [ "$passed_review" = "true" ]; then
+                      if [ "$processed" = "true" ] && [ "$valid" = "true" ] && [ "$signed" = "true" ] && [ -n "$download_url" ]; then
                           exit 0
                       fi
 
