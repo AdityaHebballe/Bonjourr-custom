@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "__MSG_extensionName__",
-    "short_name": "Bonjourr",
+    "short_name": "Bonjourr+",
     "version": "22.1.0",
     "description": "__MSG_extensionDesc__",
     "author": "Victor Azevedo and Tahoe Beetschen",
@@ -42,7 +42,8 @@
     "browser_specific_settings": {
         "gecko": {
             "id": "{4f391a9e-8717-4ba6-a5b1-488a34931fcb}",
-            "strict_min_version": "109.0"
+            "strict_min_version": "109.0",
+            "update_url": "https://raw.githubusercontent.com/AdityaHebballe/Bonjourr-custom/firefox-updates/updates.json"
         }
     }
 }
