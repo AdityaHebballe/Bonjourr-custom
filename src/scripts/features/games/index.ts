@@ -7,7 +7,7 @@ import {
     getGamesSentinel,
     toggleGamesLoadingMore,
 } from './display.ts'
-import { getGamesCacheEntry, requestGameReleaseItems } from './request.ts'
+import { GAMES_CACHE_SCHEMA_VERSION, getGamesCacheEntry, requestGameReleaseItems } from './request.ts'
 import { EXTENSION, IS_MOBILE, PLATFORM } from '../../defaults.ts'
 import { eventDebounce } from '../../utils/debounce.ts'
 import { storage } from '../../storage.ts'
@@ -39,6 +39,7 @@ let nextWindowEnd = 0
 let renderController: AbortController | undefined
 let loadMoreController: AbortController | undefined
 let loadMoreObserver: IntersectionObserver | undefined
+let hasGamesScrollIntent = false
 
 export function games(init?: Games, event?: GamesEvent): void {
     if (event) {
@@ -89,25 +90,33 @@ queueMicrotask(() => {
             }
 
             const hasHorizontalOverflow = list.scrollWidth > list.clientWidth
-
-            if (!hasHorizontalOverflow) {
-                return
-            }
-
             const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX
 
-            if (delta === 0) {
+            if (!hasHorizontalOverflow) {
+                if (delta > 0) {
+                    hasGamesScrollIntent = true
+                    observeGamesSentinel()
+                    void loadMoreGames()
+                    event.preventDefault()
+                }
                 return
             }
+
+            if (delta === 0) return
 
             list.scrollBy({ left: delta })
             event.preventDefault()
+            hasGamesScrollIntent = true
+            observeGamesSentinel()
         },
         { passive: false },
     )
 
     if (!('IntersectionObserver' in globalThis)) {
         list?.addEventListener('scroll', () => {
+            if (list.scrollLeft > 0) {
+                hasGamesScrollIntent = true
+            }
             if (list.scrollLeft + list.clientWidth >= list.scrollWidth - 160) {
                 void loadMoreGames()
             }
@@ -139,7 +148,7 @@ async function updateGames(event: GamesEvent): Promise<void> {
     }
 
     if (typeof event.size === 'number') {
-        games.size = Math.max(9, Math.min(16, event.size))
+        games.size = Math.max(7, Math.min(12, event.size))
     }
 
     await renderGames(games)
@@ -174,6 +183,7 @@ async function renderGames(config: Games): Promise<void> {
     renderedItems = []
     hasMorePages = true
     loadingMore = false
+    hasGamesScrollIntent = false
     nextWindowStart = initialEnd + 1000
     nextWindowEnd = nextWindowStart + GAMES_SCROLL_WINDOW
 
@@ -182,15 +192,22 @@ async function renderGames(config: Games): Promise<void> {
     try {
         const local = await storage.local.get([
             'gamesCache',
+            'gamesCacheVersion',
             'igdbClientId',
             'igdbClientSecret',
             'igdbAccessToken',
             'igdbAccessTokenExpiresAt',
         ])
+        const cacheStore = local.gamesCacheVersion === GAMES_CACHE_SCHEMA_VERSION ? local.gamesCache : undefined
         const { searchbar } = await storage.sync.get('searchbar')
         const hasCredentials = !!local.igdbClientId && !!local.igdbClientSecret
-        const cache = getGamesCacheEntry(local.gamesCache, query)
+        const cache = getGamesCacheEntry(cacheStore, query)
         canSearchGames = !!searchbar?.on
+
+        if (local.gamesCacheVersion !== GAMES_CACHE_SCHEMA_VERSION) {
+            storage.local.remove('gamesCache')
+            storage.local.set({ gamesCacheVersion: GAMES_CACHE_SCHEMA_VERSION })
+        }
 
         if (!hasCredentials) {
             if (renderId !== currentRender) {
@@ -198,7 +215,6 @@ async function renderGames(config: Games): Promise<void> {
             }
 
             displayGamesSetup()
-            observeGamesSentinel()
             return
         }
 
@@ -207,7 +223,6 @@ async function renderGames(config: Games): Promise<void> {
 
             if (renderId === currentRender) {
                 displayGames(renderedItems, false, canSearchGames, false)
-                observeGamesSentinel()
             }
 
             if (Date.now() - cache.fetchedAt < 1000 * 60 * 60 * 24) {
@@ -216,7 +231,7 @@ async function renderGames(config: Games): Promise<void> {
         }
 
         const { items, local: localPatch } = await requestGameReleaseItems(
-            activeQuery,
+            query,
             local,
             !!cache,
             controller.signal,
@@ -233,14 +248,13 @@ async function renderGames(config: Games): Promise<void> {
         renderedItems = mergeGames([], items)
         hasMorePages = true
         displayGames(renderedItems, false, canSearchGames, false)
-        observeGamesSentinel()
     } catch (_error) {
         if (renderId !== currentRender || controller.signal.aborted) {
             return
         }
 
+        hasMorePages = false
         displayGamesError()
-        observeGamesSentinel()
     }
 }
 
@@ -248,9 +262,9 @@ function handleToggle(state: boolean): void {
     container?.classList.toggle('hidden', !state)
 }
 
-function setGamesCardSize(size = 11.5): void {
+function setGamesCardSize(size = 9.5): void {
     document.documentElement.style.setProperty('--games-card-width', `${size.toString()}em`)
-    document.documentElement.style.setProperty('--games-card-scale', (size / 11.5).toFixed(3))
+    document.documentElement.style.setProperty('--games-card-scale', (size / 9.5).toFixed(3))
 }
 
 function isGamesRange(value = ''): value is GamesRange {
@@ -277,6 +291,7 @@ async function loadMoreGames(): Promise<void> {
         let windowsTried = 0
         const localState = await storage.local.get([
             'gamesCache',
+            'gamesCacheVersion',
             'igdbClientId',
             'igdbClientSecret',
             'igdbAccessToken',
@@ -334,7 +349,6 @@ async function loadMoreGames(): Promise<void> {
         }
 
         toggleGamesLoadingMore(false)
-        observeGamesSentinel()
     } finally {
         loadingMore = false
     }
@@ -441,6 +455,13 @@ function getRangeDuration(range: GamesRange): number {
 
 function observeGamesSentinel(): void {
     if (!list || !('IntersectionObserver' in globalThis)) {
+        return
+    }
+
+    const hasHorizontalOverflow = list.scrollWidth > list.clientWidth + 1
+
+    if (!hasMorePages || !hasGamesScrollIntent || !hasHorizontalOverflow) {
+        loadMoreObserver?.disconnect()
         return
     }
 

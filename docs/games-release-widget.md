@@ -4,7 +4,7 @@ This document describes the current `games` widget implementation in Bonjourr.
 
 ## Goal
 
-Show upcoming game releases as a movable widget on the new tab page, with live data from IGDB and a horizontally scrollable card strip.
+Show upcoming game releases as a movable widget on the new tab page, with live IGDB data and a horizontally scrollable card strip.
 
 ## Current Behavior
 
@@ -17,9 +17,9 @@ What it does now:
 - local-only credential flow through settings
 - horizontally scrollable cover cards
 - mouse wheel maps to horizontal scrolling inside the widget
-- automatic loading of the next 30-day release window when the user reaches the end
+- automatic loading of the next 30-day release window after actual user scroll intent
 - month separators inserted into the strip
-- local cache for the initial query
+- local cache for both the base query and lazy-loaded windows
 - loading, empty, setup, and error states
 - right-click shortcut to open games settings
 - optional click-to-search behavior using Bonjourr's search engine settings
@@ -107,9 +107,10 @@ The widget no longer uses a fixed visible-item count.
 Current model:
 
 - initial query uses the selected release window (`7d`, `14d`, `30d`)
-- when the user reaches the end of the strip, the widget loads the next 30-day window
+- when the user scrolls toward the end of the strip, the widget loads the next 30-day window
 - if a 30-day window is empty, it can look ahead across multiple windows before stopping
 - a small loading indicator appears at the end of the strip while the next batch is loading
+- `IntersectionObserver` is used for the end-of-strip trigger when available, with a scroll fallback otherwise
 
 The list also inserts month separators like:
 
@@ -122,19 +123,12 @@ This keeps long scrolling runs easier to scan.
 
 Current local cache behavior:
 
-- the last successful initial widget query is cached locally
-- cache max age is 30 days
-- if the cache is less than 1 day old, it is used directly
-- if the cache is older than 1 day but still valid, cached content can be shown first and then refreshed
-
-The cache key currently depends on:
-
-- range
-- platform
-- min hypes
-- limit
-
-Rolling forward-scroll windows are fetched live and are not persisted as the main cached widget response.
+- cache entries are keyed by query and by lazy-loaded window boundaries
+- cache schema is versioned; incompatible old cache is invalidated explicitly
+- cache refresh age is 1 day
+- stale cache can still be used for up to 30 days if a live request fails
+- total cache is capped and pruned
+- base widget queries are retained ahead of lazy-load window entries
 
 ## File Map
 
@@ -176,17 +170,20 @@ Notes:
 
 - `limit` is still present in sync for compatibility, but the widget no longer exposes an item-count setting in the UI.
 - visual pagination is now driven by scrolling and rolling date windows instead.
+- current default card size is smaller than the original implementation, and the slider range is biased toward smaller cards
 
 Current local structure includes:
 
 ```ts
-gamesCache?: {
+gamesCache?: Record<string, {
     fetchedAt: number
     query: {
         range: '7d' | '14d' | '30d'
         platform: 'all' | 'pc' | 'playstation' | 'xbox' | 'nintendo'
         limit: number
         minHypes: number
+        startAt?: number
+        endAt?: number
     }
     items: {
         id: string
@@ -197,7 +194,8 @@ gamesCache?: {
         url?: string
     }[]
     hasMore?: boolean
-}
+}>
+gamesCacheVersion?: number
 
 igdbClientId?: string
 igdbClientSecret?: string
@@ -210,11 +208,8 @@ igdbAccessTokenExpiresAt?: number
 - IGDB browser access can still be fragile because this is a direct client-side integration
 - credentials are stored locally in the extension, so this approach is not ideal for public distribution
 - release-date data quality depends on IGDB and can still contain oddities around editions, early access, or duplicated release metadata
-- only the initial query is cached as the main widget state; later windows are fetched on demand
 
 ## Possible Future Work
 
-- move IGDB access behind a proxy if this feature ever needs a cleaner public architecture
 - improve release-date prioritization when IGDB returns multiple dates for the same game
 - add a first-class detail link target if a better game URL source is chosen
-- persist extended forward-scroll windows if longer browsing sessions make that worthwhile

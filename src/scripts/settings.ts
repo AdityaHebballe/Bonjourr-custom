@@ -211,7 +211,7 @@ function initOptionsValues(data: Sync, local: Local): void {
     setInput('i_games_range', data.games?.range ?? '14d')
     setInput('i_games_platform', data.games?.platform ?? 'all')
     setInput('i_games_hypes', data.games?.minHypes ?? 0)
-    setInput('i_games_size', data.games?.size ?? 11.5)
+    setInput('i_games_size', data.games?.size ?? 9.5)
     setInput('i_games_clientid', local.igdbClientId ?? '')
     setInput('i_games_secret', local.igdbClientSecret ?? '')
     setInput('i_qtfreq', data.quotes?.frequency || 'day')

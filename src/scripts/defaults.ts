@@ -190,7 +190,7 @@ export const SYNC_DEFAULT: Sync = {
         platform: 'all',
         limit: 5,
         minHypes: 0,
-        size: 11.5,
+        size: 9.5,
     },
     quotes: {
         on: false,
@@ -238,6 +238,7 @@ export const LOCAL_DEFAULT: Local = {
     translations: undefined,
     quotesCache: [],
     gamesCache: undefined,
+    gamesCacheVersion: 2,
     igdbClientId: '',
     igdbClientSecret: '',
     igdbAccessToken: '',

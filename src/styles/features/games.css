@@ -126,7 +126,7 @@
 
 .games-item-title {
     display: -webkit-box;
-    font-size: calc(0.9em + 0.08em * var(--games-card-scale, 1));
+    font-size: clamp(0.82em, calc(0.98em * var(--games-card-scale, 1)), 1em);
     line-height: 1.35;
     overflow: hidden;
     overflow-wrap: anywhere;
@@ -136,12 +136,12 @@
 
 .games-item-meta {
     display: block;
-    font-size: calc(0.76em + 0.06em * var(--games-card-scale, 1));
+    font-size: clamp(0.7em, calc(0.82em * var(--games-card-scale, 1)), 0.84em);
     opacity: 0.7;
 }
 
 .games-item-date {
-    font-size: calc(0.8em + 0.08em * var(--games-card-scale, 1));
+    font-size: clamp(0.74em, calc(0.88em * var(--games-card-scale, 1)), 0.9em);
     opacity: 0.9;
 }
 

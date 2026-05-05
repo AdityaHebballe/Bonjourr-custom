@@ -1,9 +1,11 @@
 import type { GamesCache, GamesCacheStore } from '../../../types/local.ts'
 import type { GameReleaseItem, GamesQuery } from '../../../types/shared.ts'
 
+export const GAMES_CACHE_SCHEMA_VERSION = 2
 const GAMES_CACHE_REFRESH_AGE = 1000 * 60 * 60 * 24
 const GAMES_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30
 const GAMES_CACHE_MAX_ENTRIES = 48
+const GAMES_CACHE_MAX_BASE_ENTRIES = 16
 const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 const IGDB_GAMES_URL = 'https://api.igdb.com/v4/games'
 const IGDB_RELEASE_DATES_URL = 'https://api.igdb.com/v4/release_dates'
@@ -11,6 +13,7 @@ const IGDB_COVER_BASE_URL = 'https://images.igdb.com/igdb/image/upload/t_cover_b
 
 type GamesLocalState = {
     gamesCache?: GamesCacheStore
+    gamesCacheVersion?: number
     igdbClientId?: string
     igdbClientSecret?: string
     igdbAccessToken?: string
@@ -28,7 +31,8 @@ export async function requestGameReleaseItems(
     }
 
     const cacheKey = getGamesCacheKey(query)
-    const cache = getGamesCacheEntry(local.gamesCache, query)
+    const cacheStore = local.gamesCacheVersion === GAMES_CACHE_SCHEMA_VERSION ? local.gamesCache : undefined
+    const cache = getGamesCacheEntry(cacheStore, query)
 
     if (!forceRefresh && cache && isFreshCache(cache)) {
         return { items: cache.items, hasMore: !!cache.hasMore, local: {} }
@@ -56,9 +60,10 @@ export async function requestGameReleaseItems(
             hasMore,
             local: {
                 gamesCache: pruneGamesCache({
-                    ...getGamesCacheStore(local.gamesCache),
+                    ...getGamesCacheStore(cacheStore),
                     [cacheKey]: nextCache,
                 }),
+                gamesCacheVersion: GAMES_CACHE_SCHEMA_VERSION,
                 igdbAccessToken: auth.accessToken,
                 igdbAccessTokenExpiresAt: auth.expiresAt,
             },
@@ -200,7 +205,8 @@ export function getGamesCacheEntry(
     store: GamesCacheStore | undefined,
     query: GamesQuery,
 ): GamesCache | undefined {
-    return store?.[getGamesCacheKey(query)]
+    const cache = store?.[getGamesCacheKey(query)]
+    return isValidGamesCache(cache) ? cache : undefined
 }
 
 function getGamesCacheStore(store: GamesCacheStore | undefined): GamesCacheStore {
@@ -210,11 +216,35 @@ function getGamesCacheStore(store: GamesCacheStore | undefined): GamesCacheStore
 function pruneGamesCache(store: GamesCacheStore): GamesCacheStore {
     const cutoff = Date.now() - GAMES_CACHE_MAX_AGE
     const entries = Object.entries(store)
-        .filter(([, cache]) => cache.fetchedAt >= cutoff)
+        .filter(([, cache]) => isValidGamesCache(cache) && cache.fetchedAt >= cutoff)
         .sort(([, a], [, b]) => b.fetchedAt - a.fetchedAt)
-        .slice(0, GAMES_CACHE_MAX_ENTRIES)
+    const baseEntries = entries
+        .filter(([, cache]) => isBaseGamesQuery(cache.query))
+        .slice(0, GAMES_CACHE_MAX_BASE_ENTRIES)
+    const baseKeys = new Set(baseEntries.map(([key]) => key))
+    const windowEntries = entries
+        .filter(([key]) => !baseKeys.has(key))
+        .slice(0, Math.max(0, GAMES_CACHE_MAX_ENTRIES - baseEntries.length))
+    const limitedEntries = [...baseEntries, ...windowEntries]
 
-    return Object.fromEntries(entries)
+    return Object.fromEntries(limitedEntries)
+}
+
+function isBaseGamesQuery(query: GamesQuery): boolean {
+    return query.startAt === undefined && query.endAt === undefined
+}
+
+function isValidGamesCache(cache: GamesCache | undefined): cache is GamesCache {
+    if (!cache || typeof cache.fetchedAt !== 'number' || !Array.isArray(cache.items) || !cache.query) {
+        return false
+    }
+
+    const query = cache.query
+
+    return typeof query.range === 'string' &&
+        typeof query.platform === 'string' &&
+        typeof query.limit === 'number' &&
+        typeof query.minHypes === 'number'
 }
 
 async function fetchIgdbConnectionCheck(clientId: string, accessToken: string): Promise<Response | undefined> {
@@ -275,7 +305,7 @@ function sanitizeGameReleaseItems(value: unknown, query: GamesQuery): { items: G
             continue
         }
 
-        const isoDate = new Date(releaseDate * 1000).toISOString()
+        const isoDate = new Date(releaseDate * 1000).toISOString().slice(0, 10)
         const platformLabel = simplifyPlatformLabel(platformName, query.platform)
         const groupKey = gameId ? gameId.toString() : title
         const existing = grouped.get(groupKey)

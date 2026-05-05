@@ -124,21 +124,31 @@ function displayGamesMessage(text: string, className: string): void {
 }
 
 function formatDate(value: string): string {
-    const date = new Date(value)
+    const date = createUtcDate(value)
 
     return new Intl.DateTimeFormat(undefined, {
         month: 'short',
         day: 'numeric',
+        timeZone: 'UTC',
     }).format(date)
 }
 
 function formatMonth(value: string): string {
-    const date = new Date(value)
+    const date = createUtcDate(value)
 
     return new Intl.DateTimeFormat(undefined, {
         month: 'long',
         year: 'numeric',
+        timeZone: 'UTC',
     }).format(date)
+}
+
+function createUtcDate(value: string): Date {
+    if (value.includes('T')) {
+        return new Date(value)
+    }
+
+    return new Date(`${value}T00:00:00Z`)
 }
 
 function createMonthSeparator(text: string): HTMLLIElement {

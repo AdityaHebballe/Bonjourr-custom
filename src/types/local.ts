@@ -10,6 +10,7 @@ export interface Local {
     userQuoteSelection: number
     quotesCache: Quote[]
     gamesCache?: GamesCacheStore
+    gamesCacheVersion?: number
     igdbClientId?: string
     igdbClientSecret?: string
     igdbAccessToken?: string
