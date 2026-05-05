@@ -202,7 +202,7 @@ jobs:
                       find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
                   fi
 
-                  cp updates.json /tmp/firefox-updates/updates.json
+                  cp "$GITHUB_WORKSPACE/updates.json" /tmp/firefox-updates/updates.json
                   touch /tmp/firefox-updates/.nojekyll
 
                   cd /tmp/firefox-updates
