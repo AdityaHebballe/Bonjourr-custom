@@ -1,0 +1,218 @@
+name: publish-firefox
+
+on:
+    push:
+        branches:
+            - master
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 2
+
+            - uses: ./.github/actions/deno
+
+            - name: Read Firefox manifest
+              id: manifest
+              run: |
+                  version=$(sed -n 's/^    "version": "\(.*\)",$/\1/p' src/manifests/firefox.json)
+                  guid=$(sed -n 's/^            "id": "\(.*\)",$/\1/p' src/manifests/firefox.json)
+
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+                  echo "guid=$guid" >> "$GITHUB_OUTPUT"
+
+            - name: Detect Firefox version bump
+              id: version
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                      echo "publish=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  before="${{ github.event.before }}"
+
+                  if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+                      echo "publish=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  current="${{ steps.manifest.outputs.version }}"
+                  previous=$(git show "$before:src/manifests/firefox.json" | sed -n 's/^    "version": "\(.*\)",$/\1/p')
+
+                  if [ "$current" = "$previous" ]; then
+                      echo "publish=false" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "publish=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Skip when version is unchanged
+              if: steps.version.outputs.publish != 'true'
+              run: echo "Firefox version unchanged. Skipping publish."
+
+            - name: Build Firefox release
+              if: steps.version.outputs.publish == 'true'
+              run: deno run --allow-all ./tasks/build.ts firefox
+
+            - name: Package Firefox XPI
+              if: steps.version.outputs.publish == 'true'
+              run: |
+                  cd release/firefox
+                  zip -qr "../../bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}-unsigned.xpi" .
+
+            - name: Create AMO JWT
+              if: steps.version.outputs.publish == 'true'
+              id: jwt
+              env:
+                  AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+                  AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+              run: |
+                  header=$(printf '{"alg":"HS256","typ":"JWT"}' | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+                  now=$(date +%s)
+                  exp=$((now + 300))
+                  jti=$(uuidgen | tr '[:upper:]' '[:lower:]')
+                  payload=$(printf '{"iss":"%s","jti":"%s","iat":%s,"exp":%s}' "$AMO_JWT_ISSUER" "$jti" "$now" "$exp" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+                  signature=$(printf '%s.%s' "$header" "$payload" | openssl dgst -binary -sha256 -hmac "$AMO_JWT_SECRET" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+                  echo "token=$header.$payload.$signature" >> "$GITHUB_OUTPUT"
+
+            - name: Submit XPI to AMO
+              if: steps.version.outputs.publish == 'true'
+              env:
+                  AMO_JWT_TOKEN: ${{ steps.jwt.outputs.token }}
+              run: |
+                  status=$(curl -sS -o amo-status.json -w "%{http_code}" -g -X PUT \
+                      -H "Authorization: JWT $AMO_JWT_TOKEN" \
+                      -F "upload=@bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}-unsigned.xpi" \
+                      -F "channel=unlisted" \
+                      "https://addons.mozilla.org/api/v4/addons/${{ steps.manifest.outputs.guid }}/versions/${{ steps.manifest.outputs.version }}/")
+
+                  if [ "$status" = "200" ] || [ "$status" = "201" ] || [ "$status" = "202" ] || [ "$status" = "409" ]; then
+                      exit 0
+                  fi
+
+                  cat amo-status.json
+                  exit 1
+
+            - name: Wait for AMO signing
+              if: steps.version.outputs.publish == 'true'
+              env:
+                  AMO_JWT_TOKEN: ${{ steps.jwt.outputs.token }}
+              run: |
+                  for attempt in $(seq 1 40); do
+                      curl --fail-with-body -g \
+                          -H "Authorization: JWT $AMO_JWT_TOKEN" \
+                          "https://addons.mozilla.org/api/v4/addons/${{ steps.manifest.outputs.guid }}/versions/${{ steps.manifest.outputs.version }}/" \
+                          -o amo-status.json
+
+                      processed=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.processed))")
+                      valid=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.valid))")
+                      signed=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(String(data.files?.[0]?.signed ?? false))")
+                      download_url=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(data.files?.[0]?.download_url ?? '')")
+
+                      if [ "$processed" = "true" ] && [ "$valid" != "true" ]; then
+                          cat amo-status.json
+                          exit 1
+                      fi
+
+                      if [ "$processed" = "true" ] && [ "$valid" = "true" ] && [ "$signed" = "true" ] && [ -n "$download_url" ]; then
+                          exit 0
+                      fi
+
+                      sleep 15
+                  done
+
+                  cat amo-status.json
+                  exit 1
+
+            - name: Download signed XPI
+              if: steps.version.outputs.publish == 'true'
+              env:
+                  AMO_JWT_TOKEN: ${{ steps.jwt.outputs.token }}
+              run: |
+                  download_url=$(deno eval "const data = JSON.parse(Deno.readTextFileSync('amo-status.json')); console.log(data.files?.[0]?.download_url ?? '')")
+
+                  if [ -z "$download_url" ]; then
+                      cat amo-status.json
+                      exit 1
+                  fi
+
+                  curl --fail-with-body -L \
+                      -H "Authorization: JWT $AMO_JWT_TOKEN" \
+                      "$download_url" \
+                      -o "bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}.xpi"
+
+            - name: Generate Firefox update manifest
+              if: steps.version.outputs.publish == 'true'
+              id: update
+              run: |
+                  hash=$(sha256sum "bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}.xpi" | awk '{print $1}')
+                  update_link="https://github.com/${{ github.repository }}/releases/download/v${{ steps.manifest.outputs.version }}/bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}.xpi"
+
+                  cat > updates.json <<EOF
+                  {
+                      "addons": {
+                          "${{ steps.manifest.outputs.guid }}": {
+                              "updates": [
+                                  {
+                                      "version": "${{ steps.manifest.outputs.version }}",
+                                      "update_link": "$update_link",
+                                      "update_hash": "sha256:$hash"
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  EOF
+
+            - name: Upload signed Firefox artifact
+              if: steps.version.outputs.publish == 'true'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}
+                  path: bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}.xpi
+
+            - name: Publish signed Firefox release asset
+              if: steps.version.outputs.publish == 'true'
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.manifest.outputs.version }}
+                  name: v${{ steps.manifest.outputs.version }}
+                  generate_release_notes: true
+                  files: bonjourr-plus-firefox-${{ steps.manifest.outputs.version }}.xpi
+
+            - name: Publish Firefox update manifest branch
+              if: steps.version.outputs.publish == 'true'
+              run: |
+                  git fetch origin firefox-updates || true
+
+                  rm -rf /tmp/firefox-updates
+
+                  if git show-ref --verify --quiet refs/remotes/origin/firefox-updates; then
+                      git worktree add /tmp/firefox-updates --track -B firefox-updates origin/firefox-updates
+                  else
+                      git worktree add --detach /tmp/firefox-updates
+                      cd /tmp/firefox-updates
+                      git checkout --orphan firefox-updates
+                      find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+                  fi
+
+                  cp "$GITHUB_WORKSPACE/updates.json" /tmp/firefox-updates/updates.json
+                  touch /tmp/firefox-updates/.nojekyll
+
+                  cd /tmp/firefox-updates
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add updates.json .nojekyll
+
+                  if git diff --cached --quiet; then
+                      exit 0
+                  fi
+
+                  git commit -m "Update Firefox manifest for v${{ steps.manifest.outputs.version }}"
+                  git push origin firefox-updates

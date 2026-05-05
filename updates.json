@@ -1,0 +1,13 @@
+{
+    "addons": {
+        "@bonjourr-plus-adityahebballe": {
+            "updates": [
+                {
+                    "version": "22.1.0",
+                    "update_link": "https://github.com/AdityaHebballe/Bonjourr-custom/releases/download/v22.1.0/bonjourr-plus-firefox-22.1.0.xpi",
+                    "update_hash": "sha256:d3b2db06ad8ab3fa8d445ab35108e1218ed44b99ab96951f67ae84cfb97f61d8"
+                }
+            ]
+        }
+    }
+}
